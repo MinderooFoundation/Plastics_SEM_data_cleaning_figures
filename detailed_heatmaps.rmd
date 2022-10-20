@@ -1,0 +1,1106 @@
+---
+title: "Specific heatmaps"
+author: "Yannick Mulders"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+    theme: united
+    highlight: pygments
+    editor_options: 
+  chunk_output_type: console
+---
+
+## Heatmaps
+
+To keep a bit of a better overview, I have seperated the heatmap figures looking at lower level HOMs from the rest of the figures
+
+
+```{r setup, include=FALSE, warning = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(here)
+library(janitor)
+library(patchwork)
+library(viridis)
+library(shadowtext)
+library(knitr)
+
+theme_set(theme_classic())
+
+min.col      <- c("#FF4F00", "#FFCD00", "#000000", "#4F83B3", "#E9D9C8", "#7F7F7F")
+min.col.cont <- colorRampPalette(c("#4F83B3","#FFCD00","#FF4F00"))
+min.col.test <- colorRampPalette(c("#FFCD00","#FF4F00"))
+#plot(rep(1,50),col=(min.col.cont(50)), pch=19,cex=2)
+
+theme_sr <- theme(legend.background     = element_blank(),
+                 legend.box.background = element_rect(colour = "black"),
+                 legend.title          = element_text(size = 8),
+                 legend.text           = element_text(size = 8),
+                 axis.text.x           = element_text(size = 8),
+                 axis.text.y           = element_text(size = 8)
+                 )
+
+geom.text.size = 8
+theme.size     = 0.36 * geom.text.size
+
+title_theme <- theme(plot.title          = element_text(hjust = 0, size = 10), 
+                    plot.title.position = "plot")
+
+'%!in%'   <- function(x,y)!('%in%'(x,y))
+round_any <- function(x, accuracy, f=round){f(x/ accuracy) * accuracy}
+
+```
+
+
+
+
+```{r loading data, include=FALSE}
+
+df <- read_rds(here("cleaned_data", "latest_cleaned_full_data.rds")) %>% janitor::clean_names()
+
+chem_order <- c("PCBs",
+                "Phthalates",
+                "Bisphenols",
+                "PFASs",
+                "PBDEs",
+                "PBBs", 
+                "OPEs",
+                "Polymers",
+                "Other"
+                )
+
+wdf <- df %>%
+  filter(study_design != "Case study/series" &
+           study_design != "Experimental study with a control/comparison group" &
+           study_design != "Experimental study without a control/comparison group (patch testing)" 
+         ) %>%
+  mutate(risk_special  = replace(risk_special, risk_special == "", NA),
+         risk_maternal = replace(risk_maternal, risk_maternal == "", NA),
+         risk_paternal = replace(risk_paternal, risk_paternal == "", NA)
+         ) %>%
+  unite("risk_spec", c(risk_special, risk_maternal,risk_paternal), remove = T, na.rm = T) %>%
+  separate_rows(risk_spec, 
+                sep = "_"
+                ) %>%
+  mutate(risk_group = case_when(
+    str_detect(risk_spec, "Paternal") ~ "Paternal",
+    str_detect(risk_spec, "Maternal") ~ "Maternal",
+    str_detect(risk_spec, "Special") ~ "Individual",
+    str_detect(risk, "No") ~ "None"
+  )) %>%
+  unique() %>%
+  mutate(risk_spec = case_when(
+    str_detect(risk_spec, "ingestion") ~ "Ingestion",
+    str_detect(risk_spec, "occupational") ~ "Occupational",
+    str_detect(risk_spec, "other") ~ "Other (location)",
+    TRUE ~ "No special risk")) %>%
+  filter(risk_spec != "Ingestion" &
+         risk_spec != "Occupational") %>%
+  unique()
+
+```
+
+``` {r automatic detailed heatmaps for health outcomes}
+
+det_heat <- function(dat, col) {
+  
+max.val <- dat %>%
+                select(refid,
+                       level0,
+                       class) %>%
+                filter(level0 == {{ col }}) %>%
+                group_by(class) %>%
+                unique() %>%
+                drop_na() %>%
+                count() %>%
+                ungroup() %>%
+                select(n) %>%
+                max() %>%
+                round_any(10, f = ceiling)
+ 
+names_dat <- dat %>% 
+                select(refid, 
+                       level0,
+                       group
+                       ) %>%
+                filter(level0 == {{ col }}) %>%
+                unique() %>%
+                drop_na() %>%
+                group_by(group) %>%
+                summarise(n = n()) %>%
+                mutate(percent = n / sum(n) * 100) %>%
+                mutate(group = case_when(percent < 5 ~ "Other",
+                                          TRUE ~ as.character(group)
+                                         )) %>%
+                group_by(group) %>%
+                unique()
+              
+wdat <- dat %>%
+                select(refid,
+                      level0,
+                      group) %>%
+                filter(level0 == {{ col }}) %>%
+                mutate(group = case_when(group %!in% names_dat$group ~ "Other",
+                                                  TRUE ~ as.character(group)
+                                        )) %>%
+                unique() %>%
+                group_by(group) %>%
+                summarise(n = n())
+  
+hom.incl <- wdat %>%
+                arrange(desc(n)) %>%
+                filter(group != "Other") %>%
+                select(group) %>%
+                unlist() %>%
+                unique() %>%
+                paste()
+
+hom.order <- rev(c(hom.incl, "Other"))
+
+hom.label <- wdat %>%
+                mutate(label = str_glue("{group} (n = {n})")) %>%
+                pull(label, name = group)
+
+
+plotA <- dat %>%
+                select(refid,
+                         class,
+                         level0) %>%
+                filter(level0 == {{ col }}) %>%
+                unique() %>%
+                drop_na() %>%
+                group_by(class,
+                         level0)%>%
+                count() %>%
+
+          ggplot(aes(x = factor(class, level = chem_order),
+                     y = level0)
+                 ) +
+          geom_tile(aes(x     = factor(class, level = chem_order),
+                        y     = level0,
+                        fill  = n,
+                        alpha = log10(n)
+                        )
+                    ) + 
+          geom_text(aes(label = n)
+                          ) +
+          scale_fill_gradientn(colours = min.col.test(5),
+                               limits  = c(0, max.val))+
+          scale_y_discrete(position = "right")+
+          scale_alpha_continuous(range = c(0.3, 1)) +
+            
+          guides( alpha = "none") +
+          labs(x = "",
+               y = "",
+               fill = "Number of\nPapers"
+               )+
+          theme(legend.title = element_text(hjust = 1,
+                                            vjust = 1,  
+                                            size  = 10), 
+               legend.position = "left",
+               panel.background = element_rect(fill   = NA, 
+                                               colour = "black", 
+                                               size   = 1),
+               axis.text.x = element_blank()
+               )
+          
+plotB <- dat %>%
+            select(refid,
+                   class,
+                   level0, 
+                   group) %>%
+            filter(level0 == {{ col }}) %>%
+            unique() %>%
+            mutate(group = case_when(group %!in% wdat$group ~ "Other",
+                                       TRUE ~ as.character(group))) %>%
+            group_by(class,
+                     group) %>%
+            unique() %>% 
+            count() %>%
+          ggplot(aes(x = factor(class, level = chem_order),
+                     y = reorder(group, n))) +
+          geom_tile(aes(x     = factor(class, level = chem_order),
+                        y     = factor(group, level = hom.order),
+                        fill  = n,
+                        alpha = log10(n)
+                        )
+                    ) + 
+          geom_text(aes(label = n)
+                    )+
+          # scale_fill_viridis(limits = c(0, max.val),
+          #                    option = "viridis") +
+          scale_fill_gradientn(colours = min.col.test(5),
+                               #trans = "sqrt",
+                               limits = c(0, max.val))+ 
+          scale_alpha_continuous(range = c(0.3, 1)) +
+          scale_y_discrete(position = "right",
+                           label = hom.label) +
+          
+          guides( alpha = "none") + 
+          labs(x = "",
+               y = "",
+               fill = "Number of\nPapers")  +
+          theme(legend.title = element_text(hjust = 1,vjust = 1,  size = 10), 
+                legend.position = "left",
+                #legend.text = element_text(hjust = 1, angle = 45),
+                panel.background = element_rect(fill = NA, 
+                                                colour = "black", 
+                                                size = 1),
+                axis.text.x = element_text(hjust = 1, 
+                                           vjust = 1,  
+                                           size = 10, 
+                                           angle = 45)
+                )
+
+ 
+  
+        plotA + plotB +
+             plot_layout(ncol = 1, nrow = 2, 
+                         heights = c(1, 5),
+                         guides = 'collect') & theme(legend.position = 'left') &
+             plot_annotation(tag_levels = "A",
+                             title = paste( {{ col }} ),
+                             #caption = "*includes: Skin, respiratory organs, urinary tract, nervous system, bone, soft tissue, and mouth neoplasms"),
+                             subtitle = paste0('Showing the amount of studies combining chemical exposures and ICD category\n"', {{ col }} , '"(A) as well as the sub-categories within (B)')
+                             ) %>% print()
+  
+                             
+ }
+
+
+levels(as.factor(wdf$level0))
+
+neo_heatmap <- det_heat(wdf, "02 Neoplasms")
+endo_heatmap <- det_heat(wdf, "05 Endocrine, nutritional or metabolic disorders")
+nerve_heatmap <- det_heat(wdf, "08 Nervous system")
+genitourinary_heatmap <- det_heat(wdf, "16 Disorders of the genitourinary system")
+mental_heatmap <- det_heat(wdf, "06 Mental, behavioural or neurodevelopmental disorders")
+
+
+ggsave(here("figures", "neoplasms.png"), neo_heatmap,  dpi = 600, height = 100, width = 188, units="mm")
+ggsave(here("figures", "endocrine.png"), endo_heatmap,  dpi = 600, height = 100, width = 188, units="mm")
+ggsave(here("figures", "nervous_system.png"), nerve_heatmap,  dpi = 600, height = 100, width = 188, units="mm")
+ggsave(here("figures", "genitourinary.png"), genitourinary_heatmap,  dpi = 600, height = 100, width = 188, units="mm")
+ggsave(here("figures", "mental.png"), mental_heatmap,  dpi = 600, height = 100, width = 188, units="mm")
+
+```
+``` {r automatic detailed heatmaps for chemicals}
+
+chem_heat <- function(dat, col) {
+  
+max.val <- dat %>%
+              select(refid,
+                     level0,
+                     class) %>%
+              filter(class == {{ col }}) %>%
+              group_by(level0) %>%
+              unique() %>%
+              drop_na() %>%
+              count() %>%
+              ungroup() %>%
+              select(n) %>%
+              max() %>%
+              round_any(10, f = ceiling)
+ 
+names_dat <- dat %>% 
+              select(refid, 
+                     class,
+                     chem_name_shiny
+                     ) %>%
+              filter(class == {{ col }}) %>%
+              unique() %>%
+              drop_na() %>%
+              group_by(chem_name_shiny) %>%
+              summarise(n = n()) %>%
+              mutate(percent = n / sum(n) * 100) %>%
+              mutate(chem_name_shiny = case_when(percent < 5 ~ "Other",
+                                                 TRUE ~ as.character(chem_name_shiny)
+                                                 )) %>% 
+              group_by(chem_name_shiny) %>%
+              unique()
+      
+wdat <- dat %>%
+              select(refid,
+                     class,
+                     chem_name_shiny) %>%
+              filter(class == {{ col }}) %>%
+              mutate(chem_name_shiny = case_when(chem_name_shiny %!in% names_dat$chem_name_shiny ~ "Other",
+                                                TRUE ~ as.character(chem_name_shiny)
+                                                )) %>%
+              unique() %>%
+              group_by(chem_name_shiny) %>%
+              summarise(n = n())
+  
+chem.incl <- wdat %>%
+              arrange(desc(n)) %>%
+              filter(chem_name_shiny != "Other") %>%
+              select(chem_name_shiny) %>%
+              unlist() %>%
+              unique() %>%
+              paste()
+
+con.order <- c(chem.incl, "Other")
+
+con.label <- wdat %>%
+              mutate(label = str_glue("{chem_name_shiny} (n = {n})")) %>%
+              pull(label, name = chem_name_shiny)
+      
+
+hom.order <- rev(dat %>%
+              select(refid,
+                     class,
+                     level0) %>%
+              filter(class == {{ col }}) %>%
+              unique() %>%
+              drop_na() %>%
+              group_by(level0) %>%
+              count(sort = T) %>%
+              select(level0 )%>%
+              unlist() %>%
+              paste())
+
+plotA <- dat %>%
+              select(refid,
+                     class,
+                     level0) %>%
+              filter(class == {{ col }}) %>%
+              unique() %>%
+              drop_na() %>%
+              group_by(level0,
+                       class)%>%
+              count() %>%
+         ggplot(aes(x = factor(class, level = chem_order),
+                    y = factor(str_wrap(level0, 35), level = str_wrap(hom.order, 35))
+                  )
+              ) +
+         geom_tile(aes(fill = n,
+                       alpha = log10(n)
+                       )
+                   ) + 
+         geom_text(aes(label = n
+                             )
+                         ) +
+         # scale_fill_viridis(limits = c(0, (max.val+10)),
+         #                    option = "viridis") +
+          scale_fill_gradientn(colours = min.col.test(50),
+                               #trans = "sqrt",
+                               limits = c(0, (max.val+10))
+                               )+
+         #scale_fill_gradientn(colours = min.col.cont(50),
+         #                     limits = c(0,150))+
+         scale_alpha_continuous(range = c(0.3, 1)) +
+         scale_y_discrete(position = "left")+
+         guides( alpha = "none") +
+         labs(x = "",
+              y = "",
+              fill = "Number of\nPapers")+
+         theme(legend.title = element_text(hjust = 1,vjust = 1,  size = 10), 
+               legend.position = "left",
+               #legend.text = element_text(hjust = 1, angle = 45),
+               panel.background = element_rect(fill = NA, 
+                                               colour = "black", 
+                                               size = 1),
+               axis.text.x = element_text(hjust = 1, angle = 45)
+               )
+
+
+plotB <- dat %>%
+          select(refid,
+                 class,
+                 level0, 
+                 chem_name_shiny) %>%
+          filter(class == {{ col }}) %>%
+          unique() %>%
+          mutate(chem_name_shiny = case_when(chem_name_shiny %!in% wdat$chem_name_shiny ~ "Other",
+                                             TRUE ~ as.character(chem_name_shiny)
+                                             )) %>%
+          group_by(level0,
+                   chem_name_shiny) %>%
+          unique() %>%
+          count() %>%
+  
+  ggplot(aes(x = factor(chem_name_shiny, level = con.order),
+           y = factor(level0, level = hom.order)
+           )
+       ) +
+  geom_tile(aes(fill = n,
+                alpha = log10(n)
+                )
+            ) + 
+  geom_text(aes(label = n
+                      )
+                  )+
+  scale_fill_gradientn(colours = min.col.test(50),
+                       limits = c(0, (max.val+10))
+                       )+
+  scale_alpha_continuous(range = c(0.3, 1)) +
+  scale_x_discrete(label = con.label) +
+  guides(alpha = "none") + 
+  labs(x = "",
+       y = "",
+       fill = "Number of\nPapers")  +
+  theme(legend.title = element_text(hjust = 1,vjust = 1,  size = 10), 
+        legend.position = "left",
+        panel.background = element_rect(fill = NA, 
+                                        colour = "black", 
+                                        size = 1),
+        axis.text.x = element_text(hjust = 1,
+                                   vjust = 1,  
+                                   size = 10, 
+                                   angle = 45),
+        axis.text.y = element_blank()
+        )
+
+ 
+  
+        plotA + plotB+
+             plot_layout(ncol = 2, nrow = 1, 
+                         widths = c(1, 5),
+                         guides = 'collect') & theme(legend.position = 'right') &
+             plot_annotation(tag_levels = "A",
+                             title = paste( {{ col }} ),
+                             subtitle = paste0('Showing the amount of studies combining health oucomes in different ICD categories\nand exposure to "', {{ col }} , '" (A) as well as the specific chemicals within this class (B)')
+                             ) %>% print()
+  
+                             
+}
+
+wdf2 <- wdf %>% 
+  mutate(level0= case_when(
+str_detect(level0, "08 Nervous system"                                                    ) ~ "Nervous system",
+str_detect(level0, "13 Disorders of the digestive system"                                 ) ~ "Digestive system",
+str_detect(level0, "Health-related measures not related to a specific system"             ) ~ "Non system specific",
+str_detect(level0, "14 Disorders of the skin"                                             ) ~ "Skin",
+str_detect(level0, "16 Disorders of the genitourinary system"                             ) ~ "Genitourinary system",
+str_detect(level0, "02 Neoplasms"                                                         ) ~ "Neoplasms",
+str_detect(level0, "11 Circulatory system"                                                ) ~ "Circulatory system",
+str_detect(level0, "19 Certain conditions originating in the perinatal period"            ) ~ "Perinatal period",
+str_detect(level0, "18 Pregnancy, childbirth or the puerperium") ~ "Pregnancy, childbirth, or puerperium",
+str_detect(level0, "04 Immune system"                                                     ) ~ "Immune system",
+str_detect(level0, "06 Mental, behavioural or neurodevelopmental disorders"               ) ~ "Mental, behavioural, or neurodevelopmental",
+str_detect(level0, "05 Endocrine, nutritional or metabolic disorders"                     ) ~ "Endocrine, nutritional, or metabolic",
+str_detect(level0, "03 Blood or blood-forming organs"                                     ) ~ "Blood or blood-forming organs",
+str_detect(level0, "12 Respiratory system"                                                ) ~ "Respiratory system",
+str_detect(level0, "09 Visual system"                                                     ) ~ "Visual system",
+str_detect(level0, "10 Ear or mastoid process"                                            ) ~ "Ear or mastoid process",
+str_detect(level0, "15 Disorders of the musculoskeletal system or connective tissue"      ) ~ "Musculoskeletal or connective tissue",
+str_detect(level0, "20 Developmental anomalies"                                           ) ~ "Developmental anomalies",
+str_detect(level0, "17 Conditions related to sexual health"                               ) ~ "Sexual health",
+str_detect(level0, "01 Certain infectious or parasitic diseases"                          ) ~ "Infectious or parasitic",
+str_detect(level0, "07 Sleep-wake disorders"                                              ) ~ "Sleep-wake")
+)
+
+wdf2 %>% select(class) %>% unique
+
+bisphenols <- chem_heat(wdf2, "Bisphenols")
+phthalates <- chem_heat(wdf2, "Phthalates")
+opes <- chem_heat(wdf2, "OPEs")
+
+ggsave(here("figures", "bisphenols.png"), bisphenols,  dpi = 600, height = 200, width = 188, units="mm")
+ggsave(here("figures", "phthalates.png"), phthalates,  dpi = 600, height = 200, width = 188, units="mm")
+ggsave(here("figures", "opes.png"), opes,  dpi = 600, height = 200, width = 188, units="mm")
+
+
+```
+
+First we make a table with all Neoplasms at higher level to see how they are divided to the different exposures. From the table we see that there are few papers that look at skin, respiratory organs, urinary tract, nervous system, bone, and mouth neoplasms, so we can combine them into Other in the heatmap.
+
+```{r Neoplasms, echo=FALSE, results='asis'}
+
+#plot the table with all subcategories
+neo_tab<-wdf %>%
+  select(refid,
+         class,
+         category,
+         group) %>%
+  filter(category == "Neoplasm")%>%
+group_by(class,
+      group) %>%
+  unique() %>%
+  drop_na() %>%
+  count(sort = T) %>%
+  pivot_wider(names_from = class,
+              values_from = n) %>% 
+  replace(is.na(.), 0)
+  
+print(kable(neo_tab), format = "markdown")
+
+# This makes the neoplasms heatmap as is shown in the overall heatmap
+heatmap_neo1 <- wdf %>%
+select(refid,
+         class,
+         level0) %>%
+  filter(level0 == "02 Neoplasms") %>%
+  unique() %>%
+  drop_na() %>%
+  group_by(class,
+           level0)%>%
+  count() %>%
+ggplot(aes(x = factor(class, level = chem_order),
+                y = level0)) +
+  geom_tile(aes(x = factor(class, level = chem_order),
+                y = level0,
+                fill = n,
+                alpha = log10(n)
+                )
+            ) + 
+  geom_shadowtext(
+    aes(label = round(n, 
+                      0.5)
+        )) +
+  scale_fill_viridis(limits = c(0, 150),
+                     option = "viridis") +
+  #scale_fill_gradientn(colours = min.col.cont(50),
+  #                     limits = c(0,150))+
+  scale_alpha_continuous(range = c(0.3, 1)) +
+  scale_y_discrete(position = "right")+
+  guides( alpha = "none") +
+  labs(x = "",
+       y = "",
+       fill = "Number of\nPapers")+
+  theme(legend.title = element_text(hjust = 1,vjust = 1,  size = 10), 
+        legend.position = "left",
+        #legend.text = element_text(hjust = 1, angle = 45),
+        panel.background = element_rect(fill = NA, 
+                                        colour = "black", 
+                                        size = 1),
+        axis.text.x = element_blank()
+        )
+
+#here we make the df for the neoplasms with condensed categories
+neo_df <- wdf %>%
+select(refid,
+       class,
+       level0, 
+       group) %>%
+  filter(level0 == "02 Neoplasms") %>%
+  unique() %>%
+  drop_na() %>%
+  group_by(group)%>%
+  mutate(group = replace(group, group == "Skin", "Other specified body systems*"),
+         group = replace(group, group == "Respiratory organs", "Other specified body systems*"),
+         group = replace(group, group == "Urinary tract", "Other specified body systems*"),
+         group = replace(group, group == "Nervous", "Other specified body systems*"),
+         group = replace(group, group == "Bone", "Other specified body systems*"),
+         group = replace(group, group == "Mouth", "Other specified body systems*"),
+         group = replace(group, group == "Ill-defined", "unspecified body system"),
+         group = replace(group, group == "Soft tissue", "Other specified body systems*")
+         ) 
+#shows levels of neoplasms that remain
+neo_df %>%
+  select(group) %>%
+  unlist() %>%
+  unique() %>%
+  paste()
+
+# manually order the health outcome levels to put "other" last
+neo.order <- rev(c("Breast", 
+                   "Female genital organs",
+                   "Haematopoietic or lymphoid",
+                   "Male genital organs",
+                   "Endocrine gland",
+                   "Digestive organs",
+                   "unspecified body system",
+                   "Other specified body systems*"))
+
+# adding (n = x) to the label
+neo.label <- neo_df %>%
+                select(refid, group) %>%
+                drop_na(group) %>%
+                unique() %>%
+                group_by(group) %>%
+                count() %>%
+                arrange(factor(group, levels = neo.order)) %>%
+                mutate(label = paste0(group, " (n = ", n, ")", collapse = "")) %>%
+                group_by(label) %>%
+                select(label) %>%
+                unlist() %>%
+                paste()
+
+heatmap_neo2 <- neo_df %>%
+select(refid,
+       class,
+       level0, 
+       group) %>%
+  unique() %>%
+  group_by(class,
+           group)%>%
+  count() %>%
+ggplot(aes(x = factor(class, level = chem_order),
+                y = reorder(group, n))) +
+  geom_tile(aes(x = factor(class, level = chem_order),
+                y = factor(group, level = neo.order),
+                fill = n,
+                alpha = log10(n)
+                )
+            ) + 
+  geom_shadowtext(
+    aes(label = round(n, 
+                      0.5)
+        ))+
+  scale_fill_viridis(limits = c(0, 150),
+                     option = "viridis") +
+  #scale_fill_gradientn(colours = min.col.cont(50),
+  #                     limits = c(0,150))+ 
+  scale_alpha_continuous(range = c(0.3, 1)) +
+  scale_y_discrete(position = "right",
+                   label = neo.label)+
+  guides( alpha = "none") +
+  labs(x = "",
+       y = "",
+       fill = "Number of\nPapers")  +
+  theme(legend.title = element_text(hjust = 1,vjust = 1,  size = 10), 
+        legend.position = "left",
+        #legend.text = element_text(hjust = 1, angle = 45),
+        panel.background = element_rect(fill = NA, 
+                                        colour = "black", 
+                                        size = 1),
+        axis.text.x = element_text(hjust = 1,vjust = 1,  size = 10, angle = 45)
+        )
+
+heatmap_neo <- heatmap_neo1 + heatmap_neo2+
+             plot_layout(ncol = 1, nrow = 2, 
+                         heights = c(1, 5),
+                         guides = 'collect') & theme(legend.position = 'left') &
+             plot_annotation(tag_levels = "A",
+                             title = 'Neoplasms',
+                             subtitle = 'Showing both the exposures on general neoplasms (A) and the higher level neoplasms categories (B)',
+                             caption = "*includes: Skin, respiratory organs, urinary tract, nervous system, bone, soft tissue, and mouth neoplasms")
+print(heatmap_neo)
+
+ggsave(here("figures", "neoplasms.png"), heatmap_neo,  dpi = 600, height = 100, width = 188, units="mm")
+
+
+```
+
+## Detailed heatmap of endocrine, nutritional, and metabolic outcomes
+
+Here repeat the procedure for the endocrine hom
+
+```{r Endocrine, echo=FALSE, results='asis'}
+
+endo_tab <- wdf %>%
+  select(refid,
+         class,
+         category,
+         group) %>%
+  filter(category == "Endocrine, nutritional or metabolic")%>%
+group_by(class,
+      group) %>%
+  unique() %>%
+  drop_na() %>%
+  count(sort = T) %>%
+  pivot_wider(names_from = class,
+              values_from = n) %>% 
+  replace(is.na(.), 0)
+  
+print(kable(endo_tab), format = "markdown")
+
+
+heatmap_endo1 <- wdf %>%
+select(refid,
+       class,
+       level0) %>%
+  filter(level0 == "05 Endocrine, nutritional or metabolic disorders") %>%
+  unique() %>%
+  drop_na() %>%
+  group_by(class,
+           level0)%>%
+  count() %>%
+ggplot(aes(x = factor(class, level = chem_order),
+                y = level0)) +
+  geom_tile(aes(x = factor(class, level = chem_order),
+                y = level0,
+                fill = n,
+                alpha = log10(n)
+                )
+            ) + 
+  geom_shadowtext(
+    aes(label = round(n, 
+                      0.5)
+        )) +
+  scale_fill_viridis(limits = c(0, 350),
+                     option = "viridis") + 
+  scale_alpha_continuous(range = c(0.3, 1)) +
+  scale_y_discrete(position = "right",
+                   label = "05 Endocrine, nutritional or\nmetabolic disorders (n = 991)"
+                   )+
+  guides( alpha = "none") +
+  labs(x = "",
+       y = "",
+       fill = "Number of\nPapers")+
+  theme(legend.title = element_text(hjust = 1,vjust = 1,  size = 10), 
+        legend.position = "left",
+        #legend.text = element_text(hjust = 1, angle = 45),
+        panel.background = element_rect(fill = NA, 
+                                        colour = "black", 
+                                        size = 1),
+        axis.text.x = element_blank()
+        )
+
+endo_df <- wdf %>%
+             select(refid,
+                    class,
+                    level0, 
+                    group) %>%
+               filter(level0 == "05 Endocrine, nutritional or metabolic disorders") %>%
+               unique() %>%
+               drop_na() %>%
+               group_by(group)%>%
+               mutate(group = replace(group, group == "Parathyroid", "Other endocrine*"),
+                      group = replace(group, group == "Other endocrine", "Other endocrine*"),
+                      group = replace(group, group == "Genetic/epigenetic", "Other endocrine*"),
+                      group = replace(group, group == "Cell function",  "Other endocrine*"),
+                      group = replace(group, group == "Structure", "Other endocrine*")
+                      ) 
+             
+
+ endo_df %>%
+   select(group) %>%
+   unlist() %>%
+   unique() %>%
+   paste()
+
+endo.order <- rev(c("Thyroid",
+                   "Nutritional",
+                   "Glucose homeostasis",
+                   "Gonadal",
+                   "Metabolic",
+                   "Puberty",
+                   "Growth rate",
+                   "Adrenal" ,
+                   "Pituitary",
+                   "Other endocrine*"))
+
+endo.label <- endo_df %>%
+  select(refid, group) %>%
+  drop_na(group) %>%
+  unique() %>%
+  group_by(group) %>%
+  count() %>%
+  arrange(factor(group, levels = endo.order)) %>%
+  mutate(label = paste0(group, " (n = ", n, ")", collapse = "")) %>%
+  group_by(label) %>%
+  select(label) %>%
+  unlist() %>%
+  paste()
+
+heatmap_endo2 <- endo_df %>%
+  select(class,
+         group,
+         refid) %>%
+  group_by(class, group) %>%
+  count() %>%
+ggplot(aes(x = factor(class, level = chem_order),
+                y = reorder(group, n))) +
+  geom_tile(aes(x = factor(class, level = chem_order),
+                y = factor(group, level = endo.order),
+                fill = n,
+                alpha = log10(n)
+                )
+            ) + 
+  geom_shadowtext(
+    aes(label = round(n, 
+                      0.5)
+        ))+
+  scale_fill_viridis(limits = c(0, 350),
+                     option = "viridis") + 
+  scale_alpha_continuous(range = c(0.3, 1)) +
+  scale_y_discrete(position = "right",
+                   label = endo.label)+
+  guides( alpha = "none") +
+  labs(x = "",
+       y = "",
+       fill = "Number of\nPapers")  +
+  theme(legend.title = element_text(hjust = 1,vjust = 1,  size = 10), 
+        legend.position = "left",
+        #legend.text = element_text(hjust = 1, angle = 45),
+        panel.background = element_rect(fill = NA, 
+                                        colour = "black", 
+                                        size = 1),
+        axis.text.x = element_text(hjust = 1,vjust = 1,  size = 10, angle = 45)
+        )
+
+heatmap_endo <- heatmap_endo1 + heatmap_endo2+
+             plot_layout(ncol = 1, nrow = 2, 
+                         heights = c(1, 5),
+                         guides = 'collect') & theme(legend.position = 'left') &
+             plot_annotation(tag_levels = "A",
+                             #caption = "* ")
+                             title = 'Endocrine, nutritional or metabolic disorders',
+                             subtitle = 'Showing both the exposures on general Endocrine, nutritional or metabolic disorders(A)\nand the higher level Endocrine, nutritional or metabolic disorders categories (B)')
+print(heatmap_endo)
+
+ggsave(here("figures", "endocrine.png"), heatmap_endo,  dpi = 600, height = 100, width = 188, units="mm")
+
+```
+``` {r nervous system, echo=FALSE, results='asis'}
+
+neuro_tab <- wdf %>%
+  select(refid,
+         class,
+         category,
+         group) %>%
+  filter(category == "Nervous system")%>%
+group_by(class,
+      group) %>%
+  unique() %>%
+  drop_na() %>%
+  count(sort = T) %>%
+  pivot_wider(names_from = class,
+              values_from = n) %>% 
+  replace(is.na(.), 0)
+  
+print(kable(neuro_tab), format = "markdown")
+
+
+heatmap_endo1 <- wdf %>%
+select(refid,
+       class,
+       level0) %>%
+  filter(level0 == "05 Endocrine, nutritional or metabolic disorders") %>%
+  unique() %>%
+  drop_na() %>%
+  group_by(class,
+           level0)%>%
+  count() %>%
+ggplot(aes(x = factor(class, level = chem_order),
+                y = level0)) +
+  geom_tile(aes(x = factor(class, level = chem_order),
+                y = level0,
+                fill = n,
+                alpha = log10(n)
+                )
+            ) + 
+  geom_shadowtext(
+    aes(label = round(n, 
+                      0.5)
+        )) +
+  scale_fill_viridis(limits = c(0, 350),
+                     option = "viridis") + 
+  scale_alpha_continuous(range = c(0.3, 1)) +
+  scale_y_discrete(position = "right",
+                   label = "05 Endocrine, nutritional or\nmetabolic disorders (n = 991)"
+                   )+
+  guides( alpha = "none") +
+  labs(x = "",
+       y = "",
+       fill = "Number of\nPapers")+
+  theme(legend.title = element_text(hjust = 1,vjust = 1,  size = 10), 
+        legend.position = "left",
+        #legend.text = element_text(hjust = 1, angle = 45),
+        panel.background = element_rect(fill = NA, 
+                                        colour = "black", 
+                                        size = 1),
+        axis.text.x = element_blank()
+        )
+
+```
+
+``` {r female reproductive}
+
+```
+## Heatmap for the excluded studies
+
+This heatmap shows the general health outcomes for the excluded studies
+
+```{r excluded studies , echo=FALSE, results='asis'}
+
+wdf <- df %>%
+  separate_rows(risk_special, sep = "_") %>%
+  separate_rows(risk_maternal, sep = "_") %>%
+  separate_rows(risk_paternal, sep = "_") %>%
+  filter(risk_special  == "Special risk &ndash; occupational" |
+         risk_special  == "Special risk &ndash; ingestion/poisoning EVENT (e.g. Yusho/Yucheng)" |
+         risk_maternal == "Maternal special risk - occupational" |
+         risk_maternal == "Maternal special risk - ingestion/poisoning EVENT  (e.g. Yusho/Yucheng)" |
+         risk_paternal == "Paternal special risk &ndash; occupational" |
+         risk_paternal == "Paternal special risk - ingestion/poisoning EVENT  (e.g. Yusho/Yucheng)" |
+         study_design  == "Case study/series" |
+         study_design  == "Experimental study without a control/comparison group (patch testing)" ) 
+
+
+wdf %>%
+select(level0) %>%
+  unique() %>%
+  drop_na() %>%
+  print(n=21)
+
+
+wdf2 <- wdf %>% 
+  mutate(level0= case_when(
+str_detect(level0, "08 Nervous system"                                                    ) ~ "Nervous system (ICD 8)",
+str_detect(level0, "13 Disorders of the digestive system"                                 ) ~ "Digestive system (ICD 13)",
+str_detect(level0, "Health-related measures not related to a specific system"             ) ~ "Non-specific system",
+str_detect(level0, "14 Disorders of the skin"                                             ) ~ "Skin (ICD 14)",
+str_detect(level0, "16 Disorders of the genitourinary system"                             ) ~ "Genitourinary system (ICD 16)",
+str_detect(level0, "02 Neoplasms"                                                         ) ~ "Neoplasms (ICD 2)",
+str_detect(level0, "11 Circulatory system"                                                ) ~ "Circulatory system (ICD 11)",
+str_detect(level0, "19 Certain conditions originating in the perinatal period"            ) ~ "Perinatal period (ICD 19)",
+str_detect(level0, "18 Pregnancy, childbirth or the puerperium") ~ "Pregnancy, childbirth, or puerperium (ICD 18)",
+str_detect(level0, "04 Immune system"                                                     ) ~ "Immune system (ICD 4)",
+str_detect(level0, "06 Mental, behavioural or neurodevelopmental disorders"               ) ~ "Mental, behavioural, or neurodevelopmental (ICD 6)",
+str_detect(level0, "05 Endocrine, nutritional or metabolic disorders"                     ) ~ "Endocrine, nutritional, or metabolic (ICD 5)",
+str_detect(level0, "03 Blood or blood-forming organs"                                     ) ~ "Blood or blood-forming organs (ICD 3)",
+str_detect(level0, "12 Respiratory system"                                                ) ~ "Respiratory system (ICD 12)",
+str_detect(level0, "09 Visual system"                                                     ) ~ "Visual system (ICD 09)",
+str_detect(level0, "10 Ear or mastoid process"                                            ) ~ "Ear or mastoid process (ICD 10)",
+str_detect(level0, "15 Disorders of the musculoskeletal system or connective tissue"      ) ~ "Musculoskeletal or connective tissue (ICD 15)",
+str_detect(level0, "20 Developmental anomalies"                                           ) ~ "Developmental anomalies (ICD 20)",
+str_detect(level0, "17 Conditions related to sexual health"                               ) ~ "Sexual health (ICD 17)",
+str_detect(level0, "01 Certain infectious or parasitic diseases"                          ) ~ "Infectious or parasitic (ICD 1)",
+str_detect(level0, "07 Sleep-wake disorders"                                              ) ~ "Sleep-wake (ICD 7)")
+)
+
+hom_order <- wdf2 %>%
+select(refid,
+         level0) %>%
+  unique() %>%
+  drop_na() %>%
+  group_by(level0)%>%
+  count(sort = T) %>%
+  select(level0)%>%
+  unlist() %>%
+  paste()
+
+print(hom_order)
+
+#overall heatmap of chemicals vs HOM level 0
+heatmap_level0 <- wdf2 %>%
+select(refid,
+         class,
+         level0) %>%
+  unique() %>%
+  drop_na() %>%
+  group_by(class,
+           level0)%>%
+    count() %>%
+ggplot(aes(x = factor(class, level = chem_order),
+           y = factor(str_wrap(level0,30), level = rev(str_wrap(hom_order,30))),
+           fill = n)
+       ) +
+  geom_tile(aes(
+                alpha = log10(n)
+                )
+            ) + 
+  geom_shadowtext(
+    aes(label = round(n, 
+                      0.5)
+        )
+    )+
+  scale_fill_viridis(option = "viridis",
+                     limits = c(0, 400)) + 
+  scale_alpha_continuous(range = c(0.3, 1)) +
+  scale_y_discrete(position = "left")+
+  #scale_x_discrete(position = "top")+
+  guides( alpha = "none", fill = guide_colourbar(title.position="top", title.hjust = 0.5)) +
+  labs(x = "",
+       y = "",
+       fill = "Number of\nPapers") +
+  theme_sr +
+  theme(legend.title = element_text(hjust = 0,vjust = 1), 
+        legend.position = "top",
+        legend.direction="horizontal",
+        #legend.text = element_text(hjust = 1, angle = 45),
+        panel.background = element_rect(fill = NA, 
+                                        colour = "black", 
+                                        size = 1),
+        axis.text.x = element_text(hjust = 1,vjust = 1, angle = 75)
+        )
+
+
+ bar_exp <- wdf2 %>%
+select(refid,
+         class) %>%
+  unique() %>%
+  drop_na() %>%
+  group_by(class)%>%
+  count() %>% 
+ggplot(aes(x = factor(class, level = chem_order),
+                y = n)
+       ) +
+  geom_col(aes(
+                fill = n,
+                alpha = log10(n)
+                )
+            ) + 
+   geom_text(aes(label =  n),
+              vjust = 2,
+              size = theme.size
+              )+
+ # scale_y_continuous(breaks = c(0, 250, 500, 750, 1000, 1250), 
+ #                   limits = c(0,1250)) + 
+  scale_y_reverse(breaks = c(0, 100, 200, 300, 400),
+                   limits = c(450, 0))+
+  scale_fill_viridis(option = "viridis",
+                     limits = c(0, 400)) + 
+  scale_alpha_continuous(range = c(0.3, 1)) +
+  scale_x_discrete(position = "top") +
+  guides( alpha = "none", fill ="none") +
+  labs(x = "",
+       y = "Number of\npapers")+
+   theme_sr +
+   theme(axis.text.x = element_blank()
+         )
+ 
+  bar_hom <- wdf2 %>%
+select(refid,
+         level0) %>%
+  unique() %>%
+  drop_na() %>%
+  group_by(level0)%>%
+  count() %>% 
+ggplot(aes(x = n,
+           y = reorder(level0,n)
+           )
+       )+
+  geom_col(aes(fill = n,
+                alpha = log10(n)
+                )
+            ) + 
+    geom_text(aes(label =  n),
+              hjust = -0.25,
+              size = theme.size
+              )+
+  scale_x_continuous(breaks = c(0, 100, 200, 300, 400), 
+                     limits = c(0,450),
+                     position = "bottom") + 
+  scale_fill_viridis(option = "viridis",
+                     limits = c(0, 400)) + 
+  scale_alpha_continuous(range = c(0.3, 1)) +
+  guides( alpha = "none", fill ="none") +
+  labs(x = "Number of papers",
+       y = "")+
+    theme_sr +
+   theme(axis.text.y = element_blank(),
+         axis.text.x = element_text(hjust = 1,vjust = 1, angle = 75))
+
+
+  Hom_exp_map_excl <- (heatmap_level0 +  ggtitle("A. Studies reporting on checical class exposures\nand health outcomes") + title_theme) +
+                 (bar_hom +  ggtitle("B. Studies reporting on\n health outcomes") + title_theme  + 
+                    theme(axis.title.x = element_text(margin = margin(t = -30, unit = "pt"))))+
+                  (bar_exp + ggtitle("C. Studies reporting on\nchemical class exposure") + title_theme +
+                    theme(axis.title.y = element_text(margin = margin(r = -150, unit = "pt")))) + 
+                  guide_area()+
+             plot_layout(ncol = 2, nrow = 2, 
+                         widths = c(2, 1),
+                         heights = c(4, 1),
+                         guides = 'collect') +
+             plot_annotation(#tag_levels = "A",
+                             title = 'Chemical exposure and Health outcomes',
+                             #subtitle = 'Shows the number of papers that look at the intersecting chemical exposure and health outcome at a high level\n i.e. chemical class and ICD category',
+                             caption = "* only patch test or case studies, occupational or ingestion exposure")
+  
+  print(Hom_exp_map_excl)
+  
+ggsave(here("figures", "heatmap_HOM_EXP_excluded.png"), Hom_exp_map_excl,  dpi = 600, height = 250, width = 188, units="mm")
+
+```
+
+```{r}
+#here we will make the new HOM script
+
+```

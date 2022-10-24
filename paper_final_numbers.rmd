@@ -1,0 +1,1066 @@
+---
+title: "Final numbers paper"
+author: "Yannick Mulders"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+    theme: united
+    highlight: pygments
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+
+df <- df <- read_rds(here::here("cleaned_data", "latest_cleaned_full_data.rds")) %>% janitor::clean_names()
+chem_df  <- readxl::read_xlsx((here::here("Output", "chem_index_supplementary.xlsx"))) %>% janitor::clean_names()
+```
+
+## Numbers table
+
+here we calculate the final numbers which are required in the text
+
+```{r numbers }
+
+wdf <- df %>% distinct(refid) %>% count %>% mutate(variable = "total studies included")
+
+nstudies <- as.integer(wdf$n[wdf$variable == "total studies included"])
+
+wdf <- rbind(wdf,
+             chem_df %>% select(name_extracted,
+                                hazard_rating,
+                                found_not_found,
+                                production_volume_mt) %>% 
+               # filter(c(hazard_rating == "medium" | hazard_rating == "high") & found_not_found == "not found" & !is.na(production_volume_mt)) %>% 
+               filter(c(hazard_rating == "medium" | hazard_rating == "high") & found_not_found == "not found" & production_volume_mt > 0) %>% 
+               count() %>% 
+               mutate(variable = "chemical with hazard rating not found, with prod volume >0")
+             )
+
+wdf <- rbind(wdf,
+             df %>% 
+               select(country_investigated) %>% 
+               separate_rows(country_investigated,
+                             sep = "_") %>% 
+               unique() %>% 
+               count() %>% 
+               mutate(variable = "unique countries of populations")
+             )
+
+
+wdf <- rbind(wdf,
+             df %>% 
+               select(country_last_author) %>% 
+               separate_rows(country_last_author,
+                             sep = "_") %>% 
+               unique() %>% 
+               count() %>% 
+               mutate(variable = "unique countries of last author")
+             )
+
+wdf <- rbind(wdf,
+             df %>% 
+               select(country_first_auth) %>% 
+               separate_rows(country_first_auth,
+                             sep = "_") %>% 
+               unique() %>% 
+               count() %>% 
+               mutate(variable = "unique countries of first author")
+             )
+
+wdf <- rbind(wdf,
+            df %>% 
+              select(refid,
+                     population) %>% 
+              filter(population == "Mother/Child pairs") %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of studies on maternal exposure",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+            )
+
+wdf <- rbind(wdf,
+            df %>% 
+              select(refid,
+                     population) %>% 
+              filter(population == "Father/Mother/Child family") %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of studies on maternal/paternal exposure",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+)
+
+levels(as.factor(df$gender))
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     gender) %>% 
+              separate_rows(gender, sep ="_") %>% 
+              filter(gender == "Mixed") %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of studies on Mixed sex",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+             )
+            
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     gender) %>% 
+              separate_rows(gender, sep ="_") %>% 
+              filter(gender == "Male") %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of studies on male sex",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+             )
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     gender) %>% 
+              separate_rows(gender, sep ="_") %>% 
+              filter(gender == "Female") %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of studies on Female sex",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+             )
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     gender) %>% 
+              separate_rows(gender, sep ="_") %>% 
+              filter(gender == "Unknown/Not available") %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of studies with unknown sex",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+             )
+
+levels(as.factor(df$age_exp))
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     age_exp) %>% 
+              separate_rows(age_exp, sep ="_") %>% 
+              filter(age_exp == "Adult (18+)" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of adult exposures",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+             )
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     age_health) %>% 
+              separate_rows(age_health, sep ="_") %>% 
+              filter(age_health == "Adult (18+)" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of adult HOM",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+             )
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     age_exp) %>% 
+              separate_rows(age_exp, sep ="_") %>% 
+              filter(age_exp == "Older adult/Elderly" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of elderly exposures",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+             )
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     age_health) %>% 
+              separate_rows(age_health, sep ="_") %>% 
+              filter(age_health == "Older adult/Elderly" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of elderly HOM",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+             )
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     risk) %>% 
+              filter(risk == "No" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of studies without special risk",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+             )
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     risk) %>% 
+              filter(risk == "Yes" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of studies with special risk",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+             )
+
+spec.exp <- as.integer(sub(" .*", "", wdf$n[wdf$variable == "number (percentage) of studies with special risk"]))
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     risk,
+                     risk_compartor_group) %>% 
+              filter(risk == "Yes" & risk_compartor_group == "Yes" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of studies with special risk and comparator group",
+                     n = paste0(n, " (", round((n/spec.exp*100), 1),"%)"))
+             )
+
+
+levels(as.factor(df$study_design))
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     study_design) %>% 
+              filter(study_design == "Case study/series"      |
+                     study_design == "Cross-sectional study"  |
+                     study_design == "Longitudinal study" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number observational studies")
+             )
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     study_design) %>% 
+              filter(study_design == "Cross-sectional study" ) %>%
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number Cross-sectional studies")
+             )
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     study_design) %>% 
+              filter(study_design == "Longitudinal study" ) %>%
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number Longitudinal studies")
+             )
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     study_design) %>% 
+              filter(study_design != "Case study/series"      &
+                     study_design != "Cross-sectional study"  &
+                     study_design != "Longitudinal study" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number experimental studies")
+             )
+
+  
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     study_design) %>% 
+              filter(study_design == "Experimental study with a control/comparison group" ) %>%
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number analytical studies")
+             )
+
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     year) %>% 
+              filter(year > 2015 ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of studies since Jan 2016",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+             )
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     class) %>% 
+              filter(class == "PCBs" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of PCBs studies",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+             )
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     class) %>% 
+              filter(class == "Phthalates" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of Phthalates studies",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+             )
+             
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     class) %>% 
+              filter(class == "Bisphenols" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of Bisphenols studies",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+             )             
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     class) %>% 
+              filter(class == "PFAS" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of PFAS studies",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+             )    
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     class) %>% 
+              filter(class == "PBDEs" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of PBDE studies",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+             )    
+
+levels(as.factor(df$multiple_exposures))
+             
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     multiple_exposures) %>% 
+              filter(multiple_exposures == "'multiple exposures measured&rsquo; (tick if &gt;1 plastic type or chemical class, whether on the &lsquo;included&rsquo; list or not)" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of multiple exposure studies",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+             )
+             
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     class) %>% 
+              filter(class == "Polymers" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number (percentage) of Polymers studies",
+                     n = paste0(n, " (", round((n/nstudies*100), 1),"%)"))
+             )    
+
+
+sum.terms <- c("Total/Sum PCB",
+               "Total/Sum PBB",
+               "Total/Sum PBDE",
+               "Total/Sum Di-alkyl phthalates",
+               "Total/Sum PFAS",
+               "Total/Sum Chemical Exposure",
+               "Total/Sum Bisphenols",
+               "iso-propylated triaryl phosphate esters",
+               "tert-butylated triaryl phosphate esters",
+               "Total/Sum POPs",
+               "Total/Sum Organophosphate esters",
+               "Total/Sum Hexabromocyclododecane",
+               "(SCCPs) Short chain chlorinated paraffins",
+               "(MCCPs) Medium chain chlorinated paraffins",
+               "(LCCPs) Long chain chlorinated paraffins",
+               "Phosphazene flame retardants",
+               "Other (straight chain dialkyl) high molecular weight phthalates")
+
+wdf <- rbind(wdf,
+             chem_df %>% 
+               select(name_extracted,
+                      chemical_class,
+                      found_not_found) %>% 
+               filter(chemical_class != "Polymers" &
+                        !name_extracted %in% sum.terms) %>% 
+               unique() %>% 
+               count() %>% mutate(variable = "number additives")
+)  
+
+wdf <- rbind(wdf,
+             chem_df %>% 
+               select(name_extracted,
+                      chemical_class,
+                      found_not_found) %>% 
+               filter(chemical_class == "Polymers") %>% 
+               unique() %>% 
+               count() %>% mutate(variable = "number polymers")
+) 
+
+wdf <- rbind(wdf,
+             chem_df %>% 
+               select(name_extracted,
+                      chemical_class,
+                      found_not_found) %>% 
+               filter(chemical_class != "Polymers" &
+                        !name_extracted %in% sum.terms &
+                        found_not_found == "found") %>% 
+               unique() %>% 
+               count() %>% mutate(variable = "number additives found")
+)  
+
+wdf <- rbind(wdf,
+             chem_df %>% 
+               select(name_extracted,
+                      chemical_class,
+                      found_not_found) %>% 
+               filter(chemical_class == "Polymers" &
+                        found_not_found == "found") %>% 
+               unique() %>% 
+               count() %>% 
+               mutate(variable = "number polymers found")
+)  
+
+wdf <- rbind(wdf,  
+             chem_df %>% 
+               select(name_extracted,
+                      found_not_found,
+                      production_volume_mt,
+                      hazard_rating) %>% 
+               # filter(!is.na(production_volume_mt)) %>% 
+               filter(!is.na(hazard_rating)) %>% 
+               unique() %>% 
+               count() %>%
+               mutate(variable = "additives in deep dive and SEM")
+             )
+
+wdf <- rbind(wdf,
+             chem_df %>% 
+               select(name_extracted,
+                      found_not_found,
+                      production_volume_mt,
+                      hazard_rating) %>% 
+               filter(!is.na(hazard_rating)) %>% 
+               filter(production_volume_mt == 0 | 
+                        production_volume_mt == -1) %>% 
+               unique() %>% 
+               count() %>%
+               mutate(variable = "additives with prod volumes  0 or -1")
+             )
+
+wdf <- rbind(wdf,
+             chem_df %>% 
+               select(name_extracted,
+                      found_not_found,
+                      production_volume_mt,
+                      hazard_rating) %>% 
+               filter(!is.na(hazard_rating)) %>% 
+               filter(production_volume_mt == "No data available") %>% 
+               unique() %>% 
+               count() %>%
+               mutate(variable = "additives with no prod volumes data")
+             )
+
+
+
+wdf <- rbind(wdf,
+             chem_df %>% 
+               select(name_extracted,
+                      found_not_found,
+                      production_volume_mt,
+                      hazard_rating) %>% 
+               filter(!is.na(hazard_rating)) %>% 
+               filter(hazard_rating == "No data available") %>% 
+               unique() %>% 
+               count() %>%
+               mutate(variable = "additives with no hazard data available")
+             )
+
+wdf <- rbind(wdf,
+             chem_df %>% 
+               select(name_extracted,
+                      found_not_found,
+                      production_volume_mt,
+                      hazard_rating) %>% 
+               filter(production_volume_mt > 0 &
+                      production_volume_mt != "No data available") %>% 
+               unique() %>% 
+               count() %>%
+               mutate(variable = "included SEM chems with deep dive prod volumes")
+             )
+
+
+wdf <- rbind(wdf,
+             chem_df %>% 
+               select(name_extracted,
+                      found_not_found,
+                      production_volume_mt,
+                      hazard_rating) %>% 
+               filter(production_volume_mt > 0 &
+                        found_not_found == "found" &
+                        production_volume_mt != "No data available") %>% 
+               unique() %>% 
+               count() %>%
+               mutate(variable = "found SEM chems with deep dive prod volumes")
+             )
+
+
+levels(as.factor(chem_df$hazard_rating))
+
+wdf <- rbind(wdf,
+             chem_df %>% 
+               select(name_extracted,
+                      found_not_found,
+                      production_volume_mt,
+                      hazard_rating) %>% 
+               # filter(!is.na(hazard_rating)) %>% 
+               filter(hazard_rating == "high" | hazard_rating == "medium" ) %>% 
+               unique() %>% 
+               count() %>%
+               mutate(variable = "SEM chems with hazard data available")
+             )
+
+wdf <- rbind(wdf,
+             chem_df %>% 
+               select(name_extracted,
+                      found_not_found,
+                      production_volume_mt,
+                      hazard_rating) %>% 
+               filter(found_not_found == "found") %>% 
+               filter(hazard_rating == "high" | hazard_rating == "medium" ) %>% 
+               unique() %>% 
+               count() %>%
+               mutate(variable = "found SEM chems with hazard data available")
+             )
+
+df %>% 
+  select(refid,
+         level0) %>% 
+  group_by(level0) %>%
+  unique() %>% 
+  summarise(n = length(refid)) %>% 
+  arrange(-n) %>% 
+  mutate(cs = cumsum(n),
+         perc = cs/max(cs)*100) %>% 
+  print(n=20)
+
+
+
+fdf <- df %>%
+  filter(study_design != "Case study/series" &
+           study_design != "Experimental study with a control/comparison group" &
+           study_design != "Experimental study without a control/comparison group (patch testing)" 
+         ) %>%
+  mutate(risk_special  = replace(risk_special, risk_special == "", NA),
+         risk_maternal = replace(risk_maternal, risk_maternal == "", NA),
+         risk_paternal = replace(risk_paternal, risk_paternal == "", NA)
+         ) %>%
+  unite("risk_spec", c(risk_special, risk_maternal,risk_paternal), remove = T, na.rm = T) %>%
+  separate_rows(risk_spec, 
+                sep = "_"
+                ) %>%
+  mutate(risk_group = case_when(
+    str_detect(risk_spec, "Paternal") ~ "Paternal",
+    str_detect(risk_spec, "Maternal") ~ "Maternal",
+    str_detect(risk_spec, "Special") ~ "Individual",
+    str_detect(risk, "No") ~ "None"
+  )) %>%
+  unique() %>%
+  mutate(risk_spec = case_when(
+    str_detect(risk_spec, "ingestion") ~ "Ingestion",
+    str_detect(risk_spec, "occupational") ~ "Occupational",
+    str_detect(risk_spec, "other") ~ "Other (location)",
+    TRUE ~ "No special risk")) %>%
+  filter(risk_spec != "Ingestion" &
+         risk_spec != "Occupational") %>%
+  unique()
+
+
+fdf %>% 
+  select(refid,
+         level0) %>% 
+  group_by(level0) %>%
+  unique() %>% 
+  summarise(n = length(refid)) %>% 
+  arrange(-n) %>% 
+  mutate(cs = cumsum(n),
+         perc = cs/max(cs)*100) %>% 
+  print(n=20)
+
+
+wdf <- rbind(wdf,
+             fdf %>% 
+               select(refid,
+                      level0) %>% 
+               filter(level0 == "05 Endocrine, nutritional or metabolic disorders") %>% 
+               unique() %>% 
+               count() %>%
+               mutate(variable = "endocrine studies")
+             )
+
+
+edf <- df %>%
+  filter(study_design   == "Case study/series" |
+           study_design == "Experimental study with a control/comparison group" |
+           study_design == "Experimental study without a control/comparison group (patch testing)" 
+         ) %>%
+  mutate(risk_special  = replace(risk_special,   risk_special == "", NA),
+         risk_maternal = replace(risk_maternal, risk_maternal == "", NA),
+         risk_paternal = replace(risk_paternal, risk_paternal == "", NA)
+         ) %>%
+  unite("risk_spec", 
+        c(risk_special, risk_maternal,risk_paternal), 
+        remove = T, 
+        na.rm = T) %>%
+  separate_rows(risk_spec, 
+                sep = "_"
+                ) %>%
+  mutate(risk_group = case_when(
+    str_detect(risk_spec, "Paternal") ~ "Paternal",
+    str_detect(risk_spec, "Maternal") ~ "Maternal",
+    str_detect(risk_spec, "Special") ~ "Individual",
+    str_detect(risk, "No") ~ "None"
+  )) %>%
+  unique() %>%
+  mutate(risk_spec = case_when(
+    str_detect(risk_spec, "ingestion") ~ "Ingestion",
+    str_detect(risk_spec, "occupational") ~ "Occupational",
+    str_detect(risk_spec, "other") ~ "Other (location)",
+    TRUE ~ "No special risk")) %>%
+  filter(risk_spec == "Ingestion" |
+         risk_spec == "Occupational") %>%
+  unique()
+
+
+wdf <- rbind(wdf,
+             edf %>% 
+              select(refid,
+                     class) %>% 
+              filter(class == "Polymers" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number of Polymers studies in non fig5 studies")
+             )    
+
+wdf <- rbind(wdf,
+             edf %>% 
+              select(refid,
+                     class) %>% 
+              filter(class == "PCBs" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number of PCB studies in non fig5 studies")
+             )
+
+wdf <- rbind(wdf,
+             edf %>% 
+              select(refid,
+                     class) %>% 
+              filter(class == "Bisphenols" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number of bisphenol studies in non fig5 studies")
+             )
+
+wdf <- rbind(wdf,
+             edf %>% 
+              select(refid,
+                     class) %>% 
+              filter(class == "Phthalates" ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number of phthalate studies in non fig5 studies")
+             )
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     population) %>% 
+              filter(population == "Mother/Child pairs") %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number of studies on maternal exposure")
+             )
+
+
+levels(as.factor(df$study_design))
+
+wdf <- rbind(wdf,
+             df %>% 
+              select(refid,
+                     population,
+                     study_design) %>% 
+              filter(population == "Mother/Child pairs" &
+                       study_design == "Longitudinal study") %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number of longi studies on maternal exposure")
+             )
+
+wdf <- rbind(wdf,
+             df %>% 
+               select(refid,
+                      level0) %>% 
+               filter(str_detect(level0, "neurodevelop")) %>% 
+               unique() %>% 
+               count() %>%
+               mutate(variable = "neuro studies")
+             )
+
+wdf <- rbind(wdf,
+             fdf %>% 
+               select(refid,
+                      level0,
+                      age_health) %>% 
+               filter(str_detect(level0, "neurodevelop") &
+                      age_health == "Older adult/Elderly") %>% 
+               unique() %>% 
+               count() %>%
+               mutate(variable = "neuro studies elderly")
+             )
+
+wdf <- rbind(wdf,
+             fdf %>% 
+               select(refid,
+                      group,
+                      age_health) %>% 
+               filter(str_detect(group, "Mental") &
+                      age_health == "Older adult/Elderly") %>% 
+               unique() %>% 
+               count() %>%
+               mutate(variable = "neuro studies elderly")
+             )
+
+total.chem <- length(chem_df$name_extracted)
+
+wdf <- rbind(wdf,
+             chem_df %>% 
+               select(name_extracted,
+                      found_not_found) %>% 
+               filter(found_not_found =="not found") %>% 
+               count() %>% 
+               mutate(variable = "chems not found",
+                      n = paste0(n, " (", round((n/total.chem*100), 1),"%)"))
+             )
+      
+
+wdf <- rbind(wdf,
+             chem_df %>% 
+               select(name_extracted,
+                      found_not_found,
+                      production_volume_mt,
+                      hazard_rating) %>% 
+               filter(production_volume_mt != "No data available" &
+                        !is.na(production_volume_mt)) %>% 
+               filter(as.integer(production_volume_mt) >= 10 &
+                        as.integer(production_volume_mt) <= 200) %>% 
+               #filter(found_not_found == "found") %>% 
+               count() %>% 
+               mutate(variable = "low prod vol chemicals")
+             )
+
+wdf <- rbind(wdf,
+             chem_df %>% 
+               select(name_extracted,
+                      found_not_found,
+                      chemical_class,
+                      production_volume_mt,
+                      hazard_rating) %>% 
+               filter(production_volume_mt == "No data available" |
+                     is.na(production_volume_mt)) %>% 
+               filter(chemical_class != "Polymers") %>% 
+               count() %>% 
+               mutate(variable = "no prod data additives")
+             )
+
+wdf <- rbind(wdf,
+             chem_df %>% 
+               select(name_extracted,
+                      found_not_found,
+                      chemical_class,
+                      production_volume_mt,
+                      hazard_rating) %>% 
+               filter(production_volume_mt != "No data available" &
+                        !is.na(production_volume_mt)) %>% 
+               filter(as.integer(production_volume_mt) >= 1000) %>% 
+               filter(chemical_class != "Polymers") %>% 
+               filter(found_not_found == "not found") %>% 
+               filter(hazard_rating == "high" | hazard_rating == "medium" ) %>%
+               count() %>% 
+               mutate(variable = "high volume, high risk,  no literature")
+             )
+
+wdf <- rbind(wdf,
+             chem_df %>% 
+               select(name_extracted,
+                      found_not_found,
+                      chemical_class,
+                      production_volume_mt,
+                      hazard_rating) %>% 
+               filter(production_volume_mt != "No data available" &
+                        !is.na(production_volume_mt)) %>% 
+               filter(as.integer(production_volume_mt) >= 1000) %>% 
+               filter(chemical_class != "Polymers") %>% 
+               filter(found_not_found == "not found") %>% 
+               filter(hazard_rating != "high" & hazard_rating != "medium" ) %>%
+               count() %>% 
+               mutate(variable = "high volume, no risk classi,  no literature")
+             )
+
+
+levels(as.factor(df$multiple_exposures))
+
+singles <- df %>% 
+  select(refid,
+         class,
+         chem_name_shiny,
+         multiple_exposures) %>% 
+  group_by(refid) %>% 
+  distinct(class) %>% 
+  count(sort = T) %>% 
+  filter(n==1) %>% 
+  select(refid) %>% 
+  unlist()
+
+wdf <- rbind(wdf,
+             df %>% select(refid,
+                           chem_name_shiny) %>% 
+               filter(refid %in% singles) %>% 
+               group_by(refid) %>% 
+               distinct(chem_name_shiny) %>% 
+               count(sort = T) %>% 
+               filter(n > 1) %>% 
+               ungroup() %>% 
+               count() %>% 
+               mutate(variable = "studies on single class multiple chemicals")
+             )
+
+wdf <- rbind(wdf,
+             df %>% select(refid,
+                           class,
+                           multiple_exposures) %>% 
+               filter(refid %in% singles) %>% 
+               filter(multiple_exposures == "'multiple exposures measured&rsquo; (tick if &gt;1 plastic type or chemical class, whether on the &lsquo;included&rsquo; list or not)") %>% 
+               unique() %>% 
+               count() %>% 
+               mutate(variable = "studies on single class + multiple exposures")
+             )
+
+wdf <- rbind(wdf,
+             df %>% 
+               select(refid,
+                      class,
+                      chem_name_shiny,
+                      multiple_exposures) %>% 
+               group_by(refid) %>% 
+               distinct(class) %>% 
+               count(sort = T) %>% 
+               filter(n > 1) %>% 
+               ungroup() %>% 
+               count() %>% 
+               mutate(variable = "studies on multiple included classes")
+)
+
+
+
+wdf <- rbind(wdf, df %>% 
+               select(refid, 
+                      class,
+                      level0) %>% 
+               filter(str_detect(class, "Phthalate")) %>%
+               distinct(refid) %>% 
+               count() %>% 
+               mutate(variable = "studies on Phthalates")
+)
+
+wdf <- rbind(wdf, 
+             df %>% 
+               select(refid, 
+                      class,
+                      level0) %>% 
+               filter(str_detect(class, "Phthalate"),
+                      str_detect(level0, "nutritional")) %>%
+               distinct(refid) %>% 
+               count() %>% 
+               mutate(variable = "studies on Phthalates x endocrine")
+)
+
+wdf <- rbind(wdf, 
+             df %>% 
+               select(refid, 
+                      class,
+                      level0) %>% 
+               filter(str_detect(class, "Phthalate"),
+                      str_detect(level0, "genitouri")) %>%
+               distinct(refid) %>% 
+               count() %>% 
+               mutate(variable = "studies on Phthalates x genitourinary")
+)
+
+
+wdf <- rbind(wdf, 
+             df %>% 
+               select(refid, 
+                      class,
+                      level0) %>% 
+               filter(str_detect(class, "Phthalate"),
+                      str_detect(level0, "neurodeve")) %>%
+               distinct(refid) %>% 
+               count() %>% 
+               mutate(variable = "studies on Phthalates x neuro")
+)
+
+wdf <- rbind(wdf, 
+             df %>% 
+               select(refid, 
+                      class,
+                      level0) %>% 
+               filter(str_detect(class, "Phthalate"),
+                      str_detect(level0, "regnancy")) %>%
+               distinct(refid) %>% 
+               count() %>% 
+               mutate(variable = "studies on Phthalates x pregnancy")
+)
+
+wdf <- rbind(wdf, 
+             df %>% select(refid,
+                           chem_name_shiny) %>% 
+               filter(str_detect(chem_name_shiny, "DINCH")) %>% 
+               distinct(refid) %>% 
+               count() %>% 
+               mutate(variable = "studies on DINCH")
+             )
+
+wdf <- rbind(wdf, 
+             df %>% select(refid,
+                           chem_name_shiny) %>% 
+               filter(str_detect(chem_name_shiny, "DEHTP")) %>% 
+               distinct(refid) %>% 
+               count() %>% 
+               mutate(variable = "studies on DEHTP")
+             )
+
+wdf <- rbind(wdf, 
+             df %>% select(refid,
+                           class) %>% 
+               filter(str_detect(class, "OPE")) %>% 
+               distinct(refid) %>% 
+               count() %>% 
+               mutate(variable = "studies on OPEs")
+             )
+
+
+wdf <- rbind(wdf, 
+             df %>% select(refid,
+                           class,
+                           chem_name_shiny) %>% 
+               filter(str_detect(class, "isphenol")) %>% 
+               #filter(str_detect(chem_name_shiny, "BPA")) %>% 
+               distinct(refid) %>% 
+               count() %>% 
+               mutate(variable = "studies on bisphenols")
+             )
+
+wdf <- rbind(wdf, 
+             df %>% select(refid,
+                           class,
+                           chem_name_shiny) %>% 
+               filter(str_detect(class, "isphenol")) %>% 
+               filter(str_detect(chem_name_shiny, "\\(Bisphenol A\\)")) %>% 
+               filter(!str_detect(chem_name_shiny, "Tetrabromo")) %>% 
+               distinct(refid) %>% 
+               count() %>% 
+               mutate(variable = "studies on bisphenol A")
+             )
+
+wdf <- rbind(wdf, 
+             df %>% select(refid,
+                           class,
+                           chem_name_shiny) %>% 
+               filter(str_detect(class, "isphenol")) %>% 
+               filter(str_detect(chem_name_shiny, "\\(Bisphenol S\\)")) %>% 
+               filter(!str_detect(chem_name_shiny, "Tetrabromo")) %>% 
+               distinct(refid) %>% 
+               count() %>% 
+               mutate(variable = "studies on bisphenol S")
+             )
+
+wdf <- rbind(wdf, 
+             df %>% select(refid,
+                           class,
+                           chem_name_shiny) %>% 
+               filter(str_detect(class, "isphenol")) %>% 
+               filter(str_detect(chem_name_shiny, "\\(Bisphenol F\\)")) %>% 
+               filter(!str_detect(chem_name_shiny, "Tetrabromo")) %>% 
+               distinct(refid) %>% 
+               count() %>% 
+               mutate(variable = "studies on bisphenol F")
+             )
+
+wdf <- rbind(wdf, 
+             df %>% select(refid,
+                           class,
+                           chem_name_shiny) %>% 
+               filter(str_detect(class, "isphenol")) %>% 
+               filter(!str_detect(chem_name_shiny, "\\(Bisphenol F\\)") &
+                        !str_detect(chem_name_shiny, "\\(Bisphenol S\\)") &
+                        !str_detect(chem_name_shiny, "\\(Bisphenol A\\)")) %>% 
+               distinct(refid) %>% 
+               count() %>% 
+               mutate(variable = "studies on other bisphenols")
+             )
+
+
+wdf <- rbind(wdf, 
+             df %>% 
+               select(refid, 
+                      country_investigated) %>% 
+               filter(str_detect(country_investigated, "Russia")) %>%
+               distinct(refid) %>% 
+               count() %>% 
+               mutate(variable = "studies on russian populations")
+             )
+
+wdf <- rbind(wdf, 
+             df %>% 
+               select(refid, 
+                      country_first_auth,
+                      country_last_author) %>% 
+               filter(str_detect(country_first_auth, "Russia") |
+                        str_detect(country_last_author, "Russia")) %>%
+               distinct(refid) %>% 
+               count() %>% 
+               mutate(variable = "studies by russian authors")
+             )
+           
+wdf %>% 
+  gt::gt()
+
+writexl::write_xlsx(wdf, here::here("Output", "Final_numbers.xlsx"))
+```
+

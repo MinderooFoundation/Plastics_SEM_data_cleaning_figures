@@ -20,6 +20,10 @@ library(tidyverse)
 library(here)
 library(remedy)
 
+ to_code <- function(x) {
+    countrycode::countrycode(x, origin = "country.name", destination = "iso2c")
+  }
+
 ```
 
 ## Level 4 Data Cleaning
@@ -127,6 +131,34 @@ cleaned_level_4 <- cleaned_level_4 %>%
                                         )
           )
 
+
+cleaned_level_4 <- cleaned_level_4 %>%
+   mutate(age_exp = str_replace(age_exp, 
+                                        "Unsure/Not given", 
+                                        "Unspecified"
+                                        )
+          )
+
+cleaned_level_4 <- cleaned_level_4 %>%
+   mutate(age_exp_infant = str_replace(age_exp_infant, 
+                                        "Unclear/Not given", 
+                                        "Unspecified pre-adult"
+                                        )
+          )
+
+cleaned_level_4 <- cleaned_level_4 %>%
+   mutate(age_health = str_replace(age_health, 
+                                        "Unsure/Not given", 
+                                        "Unspecified"
+                                        )
+          )
+
+cleaned_level_4 <- cleaned_level_4 %>%
+   mutate(age_health_infant = str_replace(age_health_infant, 
+                                        "Unclear/Not given", 
+                                        "Unspecified pre-adult"
+                                        )
+          )
 # Use this to find specific chemicals in the distiller output
 # cleaned_level_4 %>% 
 #   select(refid, 
@@ -190,10 +222,10 @@ cleaned_level_3 <- raw_level_3 %>%
     na.rm = TRUE
     ) %>% 
   rename(
-    country_first_auth = contains("2. What is the country"), 
+    country_first_auth  = contains("2. What is the country"), 
     country_last_author = contains("3. What is the country"), 
-    year = contains("Paper Information\n1. Which year"),
-    exclusion = contains("Exclusion\nPlease ensure")
+    year                = contains("Paper Information\n1. Which year"),
+    exclusion           = contains("Exclusion\nPlease ensure")
     ) %>%
   mutate(citation = str_glue("{Author}, {Title} ({year}) {Journal}. {Volume}, {Issue}, {Pages}. DOI: {DOI}")
          ) 
@@ -218,14 +250,14 @@ cleaned_full_data <- cleaned_level_4 %>%
 ### Now we add the relevant data for the mastersheet to the dataframe
 
 ``` {r adding the indices}
-chem_index <- readxl::read_excel(here("data", "final_chem_shiny.xlsx"), sheet = "Additives") %>% janitor::clean_names()
+chem_index <- readxl::read_excel(here("data", "final_chem_list.xlsx"), sheet = "Additives") %>% janitor::clean_names()
 
-poly_index <- readxl::read_excel(here("data", "final_chem_shiny.xlsx"), sheet = "Polymers"
+poly_index <- readxl::read_excel(here("data", "final_chem_list.xlsx"), sheet = "Polymers"
                                  ) %>%  
   janitor::row_to_names(row_number = 1) %>%
   janitor::clean_names()
 
-hom_index  <- readxl::read_excel(here("data", "final_health_shiny.xlsx"), sheet = "Health classes") %>% janitor::clean_names()
+hom_index  <- readxl::read_excel(here("data", "final_health_list.xlsx"), sheet = "Health classes") %>% janitor::clean_names()
 
 
 ##################
@@ -671,7 +703,7 @@ cols <- c("refid",
           "risk_compartor_group",                                                                 
           "age_exp" ,                                                                             
           "age_exp_infant",                                                                       
-          "chem_name_shiny" , 
+          "chem_name_shiny", 
           "age_health"   ,                                                                        
           "age_health_infant" ,                                                                 
           "health_outcomes_shiny",
@@ -684,31 +716,31 @@ cols <- c("refid",
           "group"
           )
 
-gender_index <- data.frame(pop_gend = c("Prenatal",
-                                        "Neonate",
-                                        "Infant",
-                                        'Child',
-                                        'Adolescent',
-                                        'Unsure/Not given',
-                                        'Adult', 
-                                        'Older adult/Elderly',
-                                        'Unclear/Not given'
-                                        ),
-                           fig_gend = c("Prenatal (<0)",
-                                        "Neonate (0-1 mnth)",
-                                        "Infant (1-12 mnth)", 
-                                        'Child (1-10 yrs)',
-                                        'Adolescent (10-18 yrs)',
-                                        'Unsure/Not given (<18 yrs)',
-                                        'Adult', 
-                                        'Older adult/Elderly',
-                                        'Unclear/Not given'
-                                        ),
-                           gend_grp = c(rep('Pre- and perinatal', 2), 
-                                        rep("Pre-adult (<18 yrs)", 4), 
-                                        rep('Adult (>18yrs)', 3)
-                                        )
-                           )
+# gender_index <- data.frame(pop_gend = c("Prenatal",
+#                                         "Neonate",
+#                                         "Infant",
+#                                         'Child',
+#                                         'Adolescent',
+#                                         'Unsure/Not given',
+#                                         'Adult', 
+#                                         'Older adult/Elderly',
+#                                         'Unclear/Not given'
+#                                         ),
+#                            fig_gend = c("Prenatal (<0)",
+#                                         "Neonate (0-1 mnth)",
+#                                         "Infant (1-12 mnth)", 
+#                                         'Child (1-10 yrs)',
+#                                         'Adolescent (10-18 yrs)',
+#                                         'Unsure/Not given (<18 yrs)',
+#                                         'Adult', 
+#                                         'Older adult/Elderly',
+#                                         'Unclear/Not given'
+#                                         ),
+#                            gend_grp = c(rep('Pre- and perinatal', 2), 
+#                                         rep("Pre-adult (<18 yrs)", 4), 
+#                                         rep('Adult (>18yrs)', 3)
+#                                         )
+#                            )
 
 shiny_df <- cleaned_full_data %>% janitor::clean_names() %>% 
   select(one_of(cols)) %>%
@@ -781,14 +813,40 @@ shiny_df <- cleaned_full_data %>% janitor::clean_names() %>%
   filter(age_health_comb != "") %>%
   filter(age_health_comb != "Underage")%>%
   # left_join(gender_index, by = c("age_exp_comb" = "pop_gend")) %>% 
-  unique() 
+  unique() %>% 
+  separate_rows(country_investigated, sep = "_") %>%
+  mutate(ci_code = to_code(country_investigated))  
 
+
+
+df_shiny <- shiny_df %>% 
+  separate_rows(chem_name_shiny, sep = "_") %>%
+  left_join(chem_index2 %>% 
+              ungroup() %>% 
+              select(chem_name_shiny,
+                     cas),
+            by = c("chem_name_shiny" = "chem_name_shiny")) %>% 
+  mutate(age_exp_comb = case_when(age_exp_comb == "Prenatal"            ~   "Prenatal (<0)",
+                                 age_exp_comb == "Neonate"             ~   "Neonate (0-1 mnth)",
+                                 age_exp_comb == "Infant"              ~ "Infant (1-12 mnth)", 
+                                 age_exp_comb == 'Child'               ~'Child (1-10 yrs)',
+                                 age_exp_comb == 'Adolescent'          ~  'Adolescent (10-18 yrs)',
+                                 age_exp_comb == 'Unspecified pre-adult'   ~ 'Unspecified pre-adult (<18 yrs)',
+                                 TRUE ~ age_exp_comb),
+         age_health_comb = case_when(age_health_comb == "Prenatal"            ~   "Prenatal (<0)",
+                                    age_health_comb == "Neonate"             ~   "Neonate (0-1 mnth)",
+                                    age_health_comb == "Infant"              ~ "Infant (1-12 mnth)", 
+                                    age_health_comb == 'Child'               ~'Child (1-10 yrs)',
+                                    age_health_comb == 'Adolescent'          ~  'Adolescent (10-18 yrs)',
+                                    age_health_comb == 'Unspecified pre-adult'   ~ 'Unspecified pre-adult (<18 yrs)',
+                                    TRUE ~ age_health_comb)
+         )
 
 
   
-write.csv(shiny_df, here("Output",'shiny_df_condensed.csv'))
-write_rds(shiny_df, here("Output",'shiny_df_condensed.rds'))
-openxlsx::write.xlsx(shiny_df, here("Output",'shiny_df_condensed.xlsx'))
+write.csv(df_shiny, here("Output",'shiny_df_condensed_cas.csv'))
+write_rds(df_shiny, here("Output",'shiny_df_condensed_cas.rds'))
+openxlsx::write.xlsx(df_shiny, here("Output",'shiny_df_condensed_cas.xlsx'))
 ```
 
 ## Supplementary table
@@ -950,6 +1008,7 @@ supp_df1 <- supp_df %>%
 
 write.csv(supp_df1, 
           here("Output",'supplementary_data_format.csv'), 
-          row.names = FALSE)
+          row.names = FALSE,
+          na = "")
 
 ```

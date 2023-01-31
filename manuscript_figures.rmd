@@ -386,8 +386,8 @@ pbde_ope <- df %>%
              linetype   = "dashed")+
   geom_vline(xintercept = 1998)+
   labs(x = "Year", 
-       y = NULL, 
-       fill = " ")+
+       y = "Published articles per year", 
+       fill = "Chemical group (total articles)")+
   scale_fill_manual(values = min_pal_qual2[c(9,8)],
                     labels = ope.label)+
   scale_y_continuous(limits = c(0,125))+
@@ -459,8 +459,8 @@ pht_ana <- df %>%
              linetype   = "dashed")+
   geom_vline(xintercept = 1999) + # first regulations on DEHP 
   labs(x = "Year", 
-       y = "Published articles per year", 
-       fill = "Chemical group (total articles)")+
+       y = NULL, 
+       fill = "")+
   scale_fill_manual(values = c(min_pal_qual2[5], "#647d78"),
                     labels = pht.label)+
   scale_y_continuous(limits = c(0,125))+
@@ -486,9 +486,9 @@ BCD
 
 
 chem_time2 <- wrap_plots(A = (chem_year + ggtitle("A. Published articles per chemical class over time") + title_theme), 
-                         B = (pht_ana   + ggtitle("B. Phthalates and phthalate substitutes") + title_theme),
-                         C = (pbde_ope  + ggtitle("C. PBDEs and OPEs") + title_theme),
-                         D = (bis_ana   + ggtitle("D. BPA and bisphenol analogues") + title_theme), 
+                         B = (pbde_ope  + ggtitle("B. PBDEs and OPEs") + title_theme),
+                         C = (pht_ana   + ggtitle("C. Phthalates and substitutes") + title_theme ),
+                         D = (bis_ana   + ggtitle("D. BPA and analogues") + title_theme), 
                          design = wrp2) 
 
 print(chem_time2)
@@ -573,24 +573,24 @@ pop_gene <- quick_pop(df_pop, population)
 
 
 gender_index <- data.frame(pop_gend = c("Prenatal",
-                                         "Neonate",
-                                         "Infant",
-                                         'Child',
-                                         'Adolescent',
-                                         'Unsure/Not given', 
-                                         'Adult', 
-                                         'Older adult/Elderly',
-                                         'Unclear/Not given'
+                                        "Neonate",
+                                        "Infant",
+                                        'Child',
+                                        'Adolescent',
+                                        'Unspecified pre-adult', 
+                                        'Adult', 
+                                        'Older adult/Elderly',
+                                        'Unspecified'
                                         ),
                            fig_gend = c("Prenatal (<0)",
                                         "Neonate (0-1 mnth)",
                                         "Infant (1-12 mnth)", 
                                         'Child (1-10 yrs)',
                                         'Adolescent (10-18 yrs)',
-                                        'Unsure/Not given (<18 yrs)',
+                                        'Unspecified pre-adult (<18 yrs)',
                                         'Adult', 
                                         'Older adult/Elderly',
-                                        'Unclear/Not given'
+                                        'Unspecified'
                                         ),
                            gend_grp = c(rep('Pre- and perinatal', 2),
                                         rep("Pre-adult (<18 yrs)", 4),
@@ -604,10 +604,10 @@ pop_order <- rev(c("Prenatal (<0)",
                    "Infant (1-12 mnth)", 
                    'Child (1-10 yrs)',
                    'Adolescent (10-18 yrs)',
-                   'Unsure/Not given (<18 yrs)',
+                   'Unspecified pre-adult (<18 yrs)',
                    'Adult', 
                    'Older adult/Elderly',
-                   'Unclear/Not given'
+                   'Unspecified'
                    )
                  )
 
@@ -644,7 +644,13 @@ pop_exp <- df_pop %>%
         x = n
           )
     )+
-    geom_col(aes(fill = gend_grp),
+    geom_col(aes(fill = factor(gend_grp, level = c('Pre- and perinatal',
+                                                         "Pre-adult (<18 yrs)",
+                                                         'Adult (>18yrs)')
+                                                       
+                                                  
+                               )
+                 ),
              alpha = 0.8
              ) +
     geom_text(aes(label =  n),
@@ -692,7 +698,13 @@ pop_health <- df_pop %>%
       x = n
           )
     )+
-    geom_col(aes(fill = gend_grp),
+    geom_col(aes(fill = factor(gend_grp, level = c('Pre- and perinatal',
+                                                         "Pre-adult (<18 yrs)",
+                                                         'Adult (>18yrs)')
+                                                       
+                                                  
+                               )
+                 ),
              alpha = 0.8) +
     geom_text(aes(label =  n),
               hjust = -0.25,

@@ -20,6 +20,15 @@ library(tidyverse)
 
 df <- df <- read_rds(here::here("cleaned_data", "latest_cleaned_full_data.rds")) %>% janitor::clean_names()
 chem_df  <- readxl::read_xlsx((here::here("Output", "chem_index_supplementary.xlsx"))) %>% janitor::clean_names()
+
+
+####################
+chem_df %>% select(name_extracted,
+                   cas_number,
+                   found_not_found,
+                   production_volume_mt) %>% 
+  filter(production_volume_mt == "-1")
+####################
 ```
 
 ## Numbers table
@@ -38,7 +47,7 @@ wdf <- rbind(wdf,
                                 found_not_found,
                                 production_volume_mt) %>% 
                # filter(c(hazard_rating == "medium" | hazard_rating == "high") & found_not_found == "not found" & !is.na(production_volume_mt)) %>% 
-               filter(c(hazard_rating == "medium" | hazard_rating == "high") & found_not_found == "not found" & production_volume_mt > 0) %>% 
+               filter(c(hazard_rating == "medium" | hazard_rating == "high") & found_not_found == "not found" & production_volume_mt > 0 & production_volume_mt != "No data available") %>% 
                count() %>% 
                mutate(variable = "chemical with hazard rating not found, with prod volume >0")
              )
@@ -48,6 +57,7 @@ wdf <- rbind(wdf,
                select(country_investigated) %>% 
                separate_rows(country_investigated,
                              sep = "_") %>% 
+               filter(country_investigated != "Unknown") %>% 
                unique() %>% 
                count() %>% 
                mutate(variable = "unique countries of populations")
@@ -225,7 +235,8 @@ wdf <- rbind(wdf,
               select(refid,
                      risk,
                      risk_compartor_group) %>% 
-              filter(risk == "Yes" & risk_compartor_group == "Yes" ) %>% 
+              filter(risk == "Yes" & 
+                       risk_compartor_group == "Yes" ) %>% 
               unique() %>% 
               count() %>% 
               mutate(variable = "number (percentage) of studies with special risk and comparator group",
@@ -428,8 +439,8 @@ wdf <- rbind(wdf,
                       chemical_class,
                       found_not_found) %>% 
                filter(chemical_class != "Polymers" &
-                        !name_extracted %in% sum.terms &
-                        found_not_found == "found") %>% 
+                      !name_extracted %in% sum.terms &
+                      found_not_found == "found") %>% 
                unique() %>% 
                count() %>% mutate(variable = "number additives found")
 )  
@@ -573,8 +584,8 @@ df %>%
 
 fdf <- df %>%
   filter(study_design != "Case study/series" &
-           study_design != "Experimental study with a control/comparison group" &
-           study_design != "Experimental study without a control/comparison group (patch testing)" 
+         study_design != "Experimental study with a control/comparison group" &
+         study_design != "Experimental study without a control/comparison group (patch testing)" 
          ) %>%
   mutate(risk_special  = replace(risk_special, risk_special == "", NA),
          risk_maternal = replace(risk_maternal, risk_maternal == "", NA),
@@ -600,6 +611,7 @@ fdf <- df %>%
          risk_spec != "Occupational") %>%
   unique()
 
+nfstudies <- length(unique(fdf$refid))
 
 fdf %>% 
   select(refid,
@@ -625,21 +637,17 @@ wdf <- rbind(wdf,
 
 
 edf <- df %>%
-  filter(study_design   == "Case study/series" |
-           study_design == "Experimental study with a control/comparison group" |
-           study_design == "Experimental study without a control/comparison group (patch testing)" 
-         ) %>%
-  mutate(risk_special  = replace(risk_special,   risk_special == "", NA),
+  mutate(risk_special  = replace(risk_special,  risk_special == "", NA),
          risk_maternal = replace(risk_maternal, risk_maternal == "", NA),
          risk_paternal = replace(risk_paternal, risk_paternal == "", NA)
-         ) %>%
+  ) %>%
   unite("risk_spec", 
         c(risk_special, risk_maternal,risk_paternal), 
         remove = T, 
         na.rm = T) %>%
   separate_rows(risk_spec, 
                 sep = "_"
-                ) %>%
+  ) %>%
   mutate(risk_group = case_when(
     str_detect(risk_spec, "Paternal") ~ "Paternal",
     str_detect(risk_spec, "Maternal") ~ "Maternal",
@@ -652,8 +660,12 @@ edf <- df %>%
     str_detect(risk_spec, "occupational") ~ "Occupational",
     str_detect(risk_spec, "other") ~ "Other (location)",
     TRUE ~ "No special risk")) %>%
-  filter(risk_spec == "Ingestion" |
-         risk_spec == "Occupational") %>%
+  filter(risk_spec        == "Ingestion" |
+           risk_spec      == "Occupational" |
+           study_design   == "Case study/series" |
+           study_design   == "Experimental study with a control/comparison group" |
+           study_design   == "Experimental study without a control/comparison group (patch testing)" 
+  ) %>%
   unique()
 
 
@@ -697,6 +709,64 @@ wdf <- rbind(wdf,
               mutate(variable = "number of phthalate studies in non fig5 studies")
              )
 
+
+wdf <- rbind(wdf,
+             edf %>% 
+              select(refid,
+                     class,
+                     level0) %>% 
+              filter(class == "Polymers" &
+                      str_detect(level0, "skin") ) %>% 
+              unique() %>% 
+              count() %>% 
+              mutate(variable = "number of polymer studies in non fig5 studies")
+             )
+
+to_code <- function(x) {
+  countrycode::countrycode(x, 
+                           origin = "country.name", 
+                           destination = "iso2c")
+}
+
+df_gni2 <- read.csv(here::here("Data", "country_gni.csv")) %>% 
+  janitor::clean_names() %>%  
+  mutate(code = to_code(country)) %>% 
+  drop_na(code) %>% 
+  mutate(economic_status = factor(economic_status, levels = c("Low income",
+                                                              "Lower-middle income",
+                                                              "Upper-middle income",
+                                                              "High income"))) 
+
+
+gni_dat <- df_gni2 %>% 
+  left_join((df %>% 
+               select(refid,
+                      country_investigated) %>%
+               separate_rows(country_investigated, 
+                             sep = "_") %>%
+               mutate(code = to_code(country_investigated)) %>%
+               unique() %>%
+               group_by(country_investigated,
+                        code) %>%
+               count()
+             ), by = c("code" = "code")
+            ) %>%
+  select(!country_investigated) %>%
+  mutate(n = replace_na(n, 0)) 
+
+
+gni_dat %>% 
+  select(country,
+         economic_status,
+         n) %>% 
+  group_by(economic_status) %>% 
+  summarize(n = sum(n)) %>% 
+  arrange(-n) %>% 
+  mutate(cs = cumsum(n),
+         perc = cs/max(cs)*100)
+
+
+
 wdf <- rbind(wdf,
              df %>% 
               select(refid,
@@ -733,23 +803,28 @@ wdf <- rbind(wdf,
              )
 
 wdf <- rbind(wdf,
-             fdf %>% 
+             df %>% 
                select(refid,
                       level0,
+                     group,
                       age_health) %>% 
-               filter(str_detect(level0, "neurodevelop") &
-                      age_health == "Older adult/Elderly") %>% 
-               unique() %>% 
+               filter((str_detect(level0, "neurodevelop") &
+                         str_detect(group, "eurocog") &
+                      age_health == "Older adult/Elderly" ) |
+                        (str_detect(level0, "ervous syst") &
+                          age_health == "Older adult/Elderly" )
+                                              ) %>% 
+               distinct(refid) %>% 
                count() %>%
                mutate(variable = "neuro studies elderly")
              )
 
 wdf <- rbind(wdf,
-             fdf %>% 
+             df %>% 
                select(refid,
                       group,
                       age_health) %>% 
-               filter(str_detect(group, "Mental") &
+               filter(str_detect(group, "ental") &
                       age_health == "Older adult/Elderly") %>% 
                unique() %>% 
                count() %>%
@@ -777,9 +852,9 @@ wdf <- rbind(wdf,
                       hazard_rating) %>% 
                filter(production_volume_mt != "No data available" &
                         !is.na(production_volume_mt)) %>% 
-               filter(as.integer(production_volume_mt) >= 10 &
+               filter(as.integer(production_volume_mt) > 0 &
                         as.integer(production_volume_mt) <= 200) %>% 
-               #filter(found_not_found == "found") %>% 
+               filter(found_not_found == "not found") %>% 
                count() %>% 
                mutate(variable = "low prod vol chemicals")
              )
@@ -791,9 +866,11 @@ wdf <- rbind(wdf,
                       chemical_class,
                       production_volume_mt,
                       hazard_rating) %>% 
-               filter(production_volume_mt == "No data available" |
-                     is.na(production_volume_mt)) %>% 
-               filter(chemical_class != "Polymers") %>% 
+               filter(
+                      production_volume_mt == "No data available" |
+                      is.na(production_volume_mt)) %>% 
+               filter(chemical_class != "Polymers" &
+                      !name_extracted %in% total.chem ) %>% 
                count() %>% 
                mutate(variable = "no prod data additives")
              )
@@ -808,7 +885,8 @@ wdf <- rbind(wdf,
                filter(production_volume_mt != "No data available" &
                         !is.na(production_volume_mt)) %>% 
                filter(as.integer(production_volume_mt) >= 1000) %>% 
-               filter(chemical_class != "Polymers") %>% 
+               filter(chemical_class != "Polymers" &
+                      !name_extracted %in% total.chem) %>% 
                filter(found_not_found == "not found") %>% 
                filter(hazard_rating == "high" | hazard_rating == "medium" ) %>%
                count() %>% 
@@ -823,9 +901,10 @@ wdf <- rbind(wdf,
                       production_volume_mt,
                       hazard_rating) %>% 
                filter(production_volume_mt != "No data available" &
-                        !is.na(production_volume_mt)) %>% 
+                      !is.na(production_volume_mt)) %>% 
                filter(as.integer(production_volume_mt) >= 1000) %>% 
-               filter(chemical_class != "Polymers") %>% 
+               filter(chemical_class != "Polymers" &
+                      !name_extracted %in% total.chem) %>% 
                filter(found_not_found == "not found") %>% 
                filter(hazard_rating != "high" & hazard_rating != "medium" ) %>%
                count() %>% 
@@ -847,18 +926,49 @@ singles <- df %>%
   select(refid) %>% 
   unlist()
 
-wdf <- rbind(wdf,
-             df %>% select(refid,
+
+sum.refs <- df %>% 
+  select(refid, 
+         chem_name_shiny) %>% 
+  filter(chem_name_shiny %in% sum.terms) %>% 
+  select(refid) %>% 
+  unique() %>% 
+  unlist()
+
+
+    df1      <- df %>% select(refid,
                            chem_name_shiny) %>% 
                filter(refid %in% singles) %>% 
                group_by(refid) %>% 
                distinct(chem_name_shiny) %>% 
-               count(sort = T) %>% 
+               count(sort = F) %>% 
                filter(n > 1) %>% 
                ungroup() %>% 
                count() %>% 
                mutate(variable = "studies on single class multiple chemicals")
-             )
+             
+
+
+df2 <- df %>% select(refid,
+              chem_name_shiny) %>% 
+               filter(refid %in% singles) %>% 
+               filter(refid %in% sum.refs) %>% 
+               group_by(refid) %>%
+               distinct(chem_name_shiny) %>% 
+               count(sort = F) %>% 
+               filter(n == 1 ) %>% 
+               ungroup() %>% 
+               count() %>% 
+               mutate(variable = "studies on single class multiple chemicals")
+
+df3 <- as.data.frame(0,0)             
+df3 <- df3 %>% 
+  mutate(n = df1$n + df2$n,
+              variable = "studies on single class multiple chemicals") %>% 
+  select(-"0")
+
+wdf <- rbind(wdf, df3)
+                         
 
 wdf <- rbind(wdf,
              df %>% select(refid,
@@ -998,6 +1108,31 @@ wdf <- rbind(wdf,
                mutate(variable = "studies on bisphenol A")
              )
 
+
+df %>% 
+  select(refid,
+         class,
+         chem_name_shiny) %>%
+  filter(str_detect(class, "isphenol")) %>%
+  unique() %>% 
+  group_by_at(vars(-chem_name_shiny)) %>%
+  summarize(chem_name_shiny = paste0(chem_name_shiny, collapse = "_")) %>% 
+  unique() %>% 
+  filter(chem_name_shiny == "(Bisphenol A) 4-[2-(4-hydroxyphenyl)propan-2-yl]phenol") %>% 
+  ungroup() %>% 
+  count() %>% 
+  mutate(variable = "studies on exclusively bisphenol A")
+  
+  
+  df %>% 
+  select(refid,
+         class,
+         chem_name_shiny) %>%
+  filter(str_detect(class, "isphenol")) %>%
+    distinct(chem_name_shiny)
+  
+
+
 wdf <- rbind(wdf, 
              df %>% select(refid,
                            class,
@@ -1064,3 +1199,31 @@ wdf %>%
 writexl::write_xlsx(wdf, here::here("Output", "Final_numbers.xlsx"))
 ```
 
+
+
+``` {r}
+
+df %>% 
+  select(refid,
+         chem_name_shiny) %>% 
+  filter(str_detect(chem_name_shiny, "silicon"))
+
+
+ test <- chem_df %>% 
+               select(name_extracted,
+                      found_not_found) %>% 
+               filter(found_not_found =="not found") %>% 
+   unique()
+ 
+ chem_df %>% 
+               select(chemical_class,
+                      name_extracted,
+                      found_not_found) %>% 
+               filter(found_not_found =="not found") %>% 
+               filter(!name_extracted %in% sum.terms) %>%
+   filter(chemical_class != "Polymers") %>% 
+   unique()
+
+write.csv(test, here("Output","test_notfound.csv"))  
+ 
+```

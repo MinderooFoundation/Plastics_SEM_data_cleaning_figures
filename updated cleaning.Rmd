@@ -1,0 +1,1172 @@
+---
+title: "Cleaning DistillerSR"
+author: "Yannick Mulders"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+    theme: united
+    highlight: pygments
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+#installr::updateR()
+
+```
+
+```{r setup-packages, results=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(here)
+library(remedy)
+
+ to_code <- function(x) {
+    countrycode::countrycode(x, origin = "country.name", destination = "iso2c")
+  }
+
+```
+
+```{r read-raw}
+
+# have to have the guess_max increased or some values are missed because
+# read_csv incorrectly guesses some columns to be logical.
+
+raw_dat <- read_csv(
+  file      = here("data", "level_4.csv"), 
+  guess_max = 10000
+  )
+
+raw_dat_update <- read_csv(
+  file      = here("data", "update_extr_data.csv"), 
+  guess_max = 10000
+  )
+raw_geo <- read_csv(
+  file = here("data", "level_3.csv"), 
+  guess_max = 10000
+  )
+
+raw_geo_update <- read_csv(
+  file = here("data", "update_geo_data.csv"), 
+  guess_max = 10000
+  )
+
+```
+
+```{r apply-all}
+
+selection_names <- tribble(
+  ~new_name,              ~contains_string,
+  "age_exp",               "4. Age", 
+  "age_exp_infant",        "(age <18) [Exposure]", 
+  "risk",                  "Is there a special risk population in", 
+  "risk_special",          "-> Special risk – ",
+  "risk_maternal",         "-> Maternal special risk - ",
+  "risk_paternal",         "-> Paternal special risk - ",
+  "risk_compartor_group",  "Comparator Group (to the special risk group)",
+  "chem_name_ref",         "5a. Please", 
+  "chem_name_shiny",       "5b. Please provide the chemical name found in the ShinyApp", 
+  "age_health",            "6. Age", 
+  "age_health_infant",     "(age <18) [Outcome measure]",
+  "health_outcomes_paper", "7a. Please",
+  "health_outcomes_shiny", "7b.",
+  "gender",                "Gender of population",
+  "population",            "individuals/pairs/families?",
+  "study_design",          "8. Please indicate the study design",
+  "multiple_exposures",    "multiple exposures measured",
+    # "maternal_risk", "Maternal"
+)
+
+# cleaning and compression of the overly wide columns
+cleaned_dat <- raw_dat %>%
+  select(!contains("exclusion")) %>%
+  purrr::reduce2(
+    .x = selection_names$new_name,
+    .y = selection_names$contains_string,
+    .f = function (data, x, y) {
+      unite(
+        data = data,
+        col = !!x,
+        contains(y),
+        sep = "_",
+        na.rm = TRUE
+      )
+    },
+    .init = .
+  )
+
+cleaned_dat2 <- cleaned_dat %>% 
+  select(-`Manual Entry [Generator]`,
+         -`i. Study type`,
+         -`ii. If an observational study, was it analytic or descriptive? `,
+         - `Study Design [Generator]`,
+         - contains("Metabolites not found in Shiny"))
+
+# new names and selection strings
+selection_names2 <- tribble(
+  ~new_name,              ~contains_string,
+  "age_exp",               "4. Age", 
+  "age_exp_infant",        "(age <18) [Exposure]", 
+  "risk",                  "Is there a special risk population in", 
+  "risk_special",          "-> Special risk",
+   "risk_maternal",         "-> Maternal special risk",
+  # "risk_paternal",         "-> Paternal special risk",
+   "risk_compartor_group",  "Comparator Group (to the special risk group)",
+   "chem_name_ref",         "5a. Please", 
+   "chem_name_shiny",       "5b. Please provide the chemical name found in the ShinyApp", 
+   "age_health",            "6. Age", 
+   "age_health_infant",     "(age <18) [Outcome measure]",
+   "health_outcomes_paper", "7a. Please",
+   "health_outcomes_shiny", "7b.",
+   "gender",                "Gender of population",
+   "population",            "individuals/pairs/families?",
+   "study_design",          "8. Please indicate the study design",
+   "multiple_exposures",    "multiple exposures measured"
+    # "maternal_risk", "Maternal"
+)
+
+# cleaning and compression of the overly wide columns
+cleaned_dat_update <- raw_dat_update %>%
+  select(!contains("exclusion")) %>%
+  purrr::reduce2(
+    .x = selection_names2$new_name,
+    .y = selection_names2$contains_string,
+    .f = function (data, x, y) {
+      unite(
+        data = data,
+        col = !!x,
+        contains(y),
+        sep = "_",
+        na.rm = TRUE
+      )
+    },
+    .init = .
+  )
+
+
+cleaned_dat_update2 <- cleaned_dat_update %>% 
+  mutate(gender = case_when(gender == "Male_Female_Mixed" ~ "Mixed",
+                            gender == "Male_Female" ~ "Mixed",
+                            TRUE ~ gender),
+         risk_paternal = ""
+         ) %>% 
+  rename(`L4.0 Child Form B_k`   = contains("Data extraction form")) %>% 
+  select(-contains("(e.g. unspecified congener or isomer)' (COMMENT)"),
+         -contains("microplastic/nanoplastic")
+         )
+
+
+colnames(cleaned_dat_update2)
+
+cleaned_dat_both <- rbind(cleaned_dat2, cleaned_dat_update2)
+
+
+
+```
+
+```{r cleaning up level 4}
+cleaned_level_4 <- janitor::clean_names(cleaned_dat_both)
+
+#levels(as.factor(cleaned_level_4$population))
+
+#we need to replace any part of the string that inconsistent wording, or other issues
+cleaned_level_4 <- cleaned_level_4 %>%
+   mutate(chem_name_shiny       = str_replace(chem_name_shiny, 
+                                        "All PCB Congeners", 
+                                        paste("PCB", 1:209, collapse = "_")),
+          age_exp               = str_replace(age_exp, 
+                                        "Unsure/Not given", 
+                                        "Unspecified"),
+          age_exp_infant        = str_replace(age_exp_infant, 
+                                        "Unclear/Not given", 
+                                        "Unspecified pre-adult"),
+          age_health            = str_replace(age_health, 
+                                        "Unsure/Not given", 
+                                        "Unspecified"),
+          age_health_infant     = str_replace(age_health_infant, 
+                                        "Unclear/Not given", 
+                                        "Unspecified pre-adult"),
+          health_outcomes_shiny = str_replace(health_outcomes_shiny, 
+                                        "infants &gt; 1 month and &lt;1 year", 
+                                        "infants > 1 month and <1 year"),
+          health_outcomes_shiny = str_replace(health_outcomes_shiny, 
+                                        "Disorders of newborn related to slow fetal growth or fetal malnutrition", 
+                                        "Disorders of newborn related to fetal growth or fetal nutrition"),
+          chem_name_shiny       = str_replace(chem_name_shiny,
+                                         "&#039;",
+                                         "'"),
+          population            = str_replace(population,
+                                        "Father/Mother/Child family",
+                                        "Father-mother-child family"),
+          population            = str_replace(population,
+                                        "Mother/Child pairs",
+                                        "Mother-child pairs")
+          )
+
+
+
+
+# Use this to find specific chemicals in the distiller output
+# cleaned_level_4 %>% 
+#   select(refid, 
+#          chem_name_shiny) %>%
+#   filter(str_detect(chem_name_shiny, 
+#                     "tetradecyl")
+#          ) %>%
+#   print(n = 5)
+
+#####################
+# here we change the issue with > and <, as well as an updated outcome in the mastersheet
+
+# Use this to find specific health outcomes in the distiller output
+# cleaned_level_4 %>% 
+#   select(refid, 
+#          health_outcomes_shiny) %>%
+#   filter(str_detect(health_outcomes_shiny, 
+#                     "Measures of neurodevelopment in infants &gt; 1 month and &lt;1 year other than measures of general cognitive performance")
+#          ) %>%
+#   print(n = 5)
+
+
+
+# cleaned_level_4 <- cleaned_level_4 %>%
+#    mutate(health_outcomes_shiny = str_replace(health_outcomes_shiny, 
+#                                         "infants &gt; 1 month and &lt;1 year", 
+#                                         "infants > 1 month and <1 year"
+#                                         ),
+#           health_outcomes_shiny = str_replace(health_outcomes_shiny, 
+#                                         "Disorders of newborn related to slow fetal growth or fetal malnutrition", 
+#                                         "Disorders of newborn related to fetal growth or fetal nutrition"
+#                                         ),
+#            chem_name_shiny = str_replace(chem_name_shiny,
+#                                          "&#039;",
+#                                          "'"
+#                                         )
+#           # chem_name_shiny = str_replace(chem_name_shiny,
+#           #                               "(PFDoDS) 1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,12-pentacosafluorododecane-1-sulfonic acid",
+          #                               "(PFDoDS) 1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,12-pentacosafluorododecane-1-sulfonic acid")
+          #      )
+
+
+cleaned_level_4 %>%
+  select(refid,
+         chem_name_shiny) %>%
+  separate_rows(chem_name_shiny,
+                        sep = "_") %>%
+  filter(str_detect(chem_name_shiny, "DHBP")) %>%
+  #filter(refid =="2016613876") %>%
+  unique()
+
+
+```
+
+```{r cleaning-form-a}
+
+cleaned_geo_update <- raw_geo_update %>%
+    unite(
+    "country_investigated",
+    contains("Country of the investigated population"), 
+    sep = "_",
+    na.rm = TRUE
+    ) %>%
+  # unite(
+  #   col = "reason_for_exclusion", 
+  #   contains("Reason for exclusion:"), 
+  #   sep = "_", 
+  #   na.rm = TRUE
+  #   ) %>% 
+  rename(
+    country_first_auth  = contains("2. What is the country"), 
+    country_last_author = contains("3. What is the country"), 
+    year                = contains("Paper Information\n1. Which year"),
+    exclusion           = contains("Exclusion\nPlease ensure")
+    ) %>%
+  mutate(citation = str_glue("{Author}, {Title} ({year}) {Journal}. {Volume}, {Issue}, {Pages}. DOI: {DOI}")
+         ) 
+
+cleaned_geo_update <- janitor::clean_names(cleaned_geo_update)
+
+
+
+
+cleaned_geo <- raw_geo %>%
+    unite(
+    "country_investigated",
+    contains("Country of the investigated population"), 
+    sep = "_",
+    na.rm = TRUE
+    ) %>%
+  unite(
+    col = "reason_for_exclusion", 
+    contains("Reason for exclusion:"), 
+    sep = "_", 
+    na.rm = TRUE
+    ) %>% 
+  rename(
+    country_first_auth  = contains("2. What is the country"), 
+    country_last_author = contains("3. What is the country"), 
+    year                = contains("Paper Information\n1. Which year"),
+    exclusion           = contains("Exclusion\nPlease ensure")
+    ) %>%
+  mutate(citation = str_glue("{Author}, {Title} ({year}) {Journal}. {Volume}, {Issue}, {Pages}. DOI: {DOI}")
+         ) 
+
+cleaned_geo <- janitor::clean_names(cleaned_geo)
+
+colnames(cleaned_geo)
+colnames(cleaned_geo_update)
+
+cleaned_geo_2 <- cleaned_geo %>% 
+  select(-notes_from_level_2_0,
+         -check_whether_exposure_was_directly_measured,
+         -check_whether_this_is_a_primary_study_not_a_review,
+         -check_whether_there_is_a_health_outcome_s_directly_indirectly_e_g_via_risk_assessment,
+         -reason_for_exclusion,
+         -check_if_this_is_a_plastic_substance,
+         -other,
+         -x33) %>% 
+  mutate(version = "original")
+
+cleaned_geo_update_2 <- cleaned_geo_update %>% 
+  select(-notes_from_level_2_0,
+         -notes_from_level_2_1,
+         -check_whether_this_is_a_primary_study_not_a_review,
+         -check_whether_exposure_was_directly_measured,
+         -check_whether_there_is_a_health_outcome_s_directly_indirectly_e_g_via_risk_assessment,
+         -x24) %>% 
+  mutate(version = "update")
+
+
+cleaned_geo_both <- rbind(cleaned_geo_2, cleaned_geo_update_2) 
+
+
+
+########################dupe checker###############
+
+# dupe_ref <- openxlsx::read.xlsx(here("data", "duplicate_list.xlsx")) %>% janitor::clean_names()
+# 
+# 
+# dupe_df <- level_3_combined %>% 
+#   select(refid,
+#          #citation, #only really comes up with different papers by the same authors
+#          title,
+#          author,
+#          doi,
+#          version) %>% 
+#   mutate(title = tolower(title)) %>% 
+#   filter(!refid %in% as.character(dupe_ref$refid)) %>% 
+#   unique()
+# 
+# df_comp <- RecordLinkage::compare.dedup(dupe_df, exclude= c(1,3,4,5), strcmp = T)
+# weight_list <- RecordLinkage::epiWeights(df_comp) 
+# check_title_both <- RecordLinkage::getPairs(weight_list,single.rows=T,min.weight=0.90)
+# 
+# openxlsx::write.xlsx(check_title_both, here("Output",'dupe_checker_title_both.xlsx'))
+
+```
+
+
+``` {r combining 3 and 4}
+
+cleaned_full_data_base <- cleaned_level_4 %>%
+                        left_join(cleaned_geo_both, 
+                                  by = c("refid" = "refid")
+                                  ) %>%
+                        filter(exclusion == "Continue"
+                               ) %>%
+                        drop_na(l4_0_child_form_b_k)
+
+
+
+```
+
+``` {r adding the indices}
+chem_index <- readxl::read_excel(here("data", "final_chem_list.xlsx"), sheet = "Additives") %>% janitor::clean_names()
+
+poly_index <- readxl::read_excel(here("data", "final_chem_list.xlsx"), sheet = "Polymers"
+                                 ) %>%  
+  janitor::row_to_names(row_number = 1) %>%
+  janitor::clean_names()
+
+hom_index  <- readxl::read_excel(here("data", "final_health_list.xlsx"), sheet = "Health classes") %>% janitor::clean_names()
+
+
+##################
+# naphtphalene test
+
+# chem_index %>% 
+#   select(x3) %>% 
+#   filter(str_detect(x3, "naphthalenes"))
+# 
+# 
+# ###############
+
+chem_index <- chem_index %>% 
+  filter(included_in_shiny == "y") %>%
+  select(additive_identification,
+         "chem_name_shiny"   = x3,
+         "cas"               = x6,
+         "smiles"            = x8,
+         "inchl"             = x10,
+         "inchlkey"          = x11,
+         "plasticiser"       = additive_function,
+         "flame_retardant"   = x29,
+         "pfas"              = x31,
+         "class"             = x27,
+         #"class2"            = x22,
+         #"class3"            = x23,
+         "gen_function"      = x12,
+         "sector"            = x14,
+         "production_volume" = x19,
+         "level_of_concern"  = x21,
+         "source1"           = x102,
+         "source2"           = x103) %>%
+  filter(!is.na(class))
+  
+
+####### consolidating sources ########
+chem_index_c <- chem_index %>% 
+  unite("source",
+        source1, source2,
+        sep    = "; ",
+        remove = T,
+        na.rm  = T) %>% 
+  separate_rows(source,
+                sep = "; ") %>% 
+  unique() %>% 
+  group_by_at(vars(-source)) %>% 
+  summarize(source = paste0(source, collapse = "; ")
+            )
+
+# source_names <- chem_index_c %>% 
+#   separate_rows(source,
+#                 sep = "; ") %>% 
+#   group_by(source) %>% 
+#   count()  
+
+#writexl::write_xlsx(source_names, here("Output", "chem_sources.xlsx"))
+# source_index <- readxl::read_excel(here("Output", "chem_sources_index1.xlsx")) %>% janitor::clean_names()
+# 
+# source_names2 <- chem_index_c %>% 
+#   separate_rows(source,
+#                 sep = "; ") %>%
+#   left_join(source_index,
+#             by = c("source" = "old_source")) %>% 
+#   mutate(source = new_source) %>% 
+#   select(-new_source) %>% 
+#   separate_rows(source,
+#                 sep = "; ") %>% 
+#   group_by(source) %>% 
+#   count()  
+
+#writexl::write_xlsx(source_names2, here("Output", "chem_sources2.xlsx"))  
+source_index2 <- readxl::read_excel(here("Output", "chem_sources2_index.xlsx")) %>% janitor::clean_names()   
+
+chem_index_c <- chem_index_c %>% 
+  separate_rows(source,
+                sep = "; ") %>%
+  left_join(source_index2,
+            by = c("source" = "source_old")) %>% 
+  mutate(source = source_new) %>% 
+  select(-source_new) %>% 
+  separate_rows(source,
+                sep = "; ") %>% 
+  unique() %>% 
+  group_by_at(vars(-source)) %>% 
+  summarize(source = paste0(source, collapse = "; ")
+            )
+
+
+###
+
+chem_index_c2 <- chem_index_c %>% 
+  mutate(pfas = ifelse(!is.na(pfas),
+                       "PFAS",
+                       pfas)) %>% 
+  unite("add_function",
+        plasticiser, flame_retardant, pfas, 
+        sep = "; ",
+        remove = T,
+        na.rm = T) %>% 
+  mutate(production_volume = case_when(production_volume == "missing" ~ "No data available",
+                                       is.na(production_volume)       ~ production_volume,
+                                       TRUE                           ~ production_volume),
+         level_of_concern = case_when(level_of_concern == "mising"    ~ "No data available",
+                                       is.na(level_of_concern)        ~ level_of_concern,
+                                       TRUE                           ~ level_of_concern),
+         source = str_replace_all(source,
+                                  "; NA",
+                                  "")
+         ) %>% 
+  mutate(class = case_when(class == "Other" & add_function == "Plasticiser" ~ "Other plasticizers",
+                           class == "Other" & add_function == "Flame retardant" ~ "Other flame retardants",
+                           chem_name_shiny == "Total/Sum Hexabromocyclododecane" ~ "Other flame retardants",
+                           class == "Other"               ~ "Other mixed use",
+                           TRUE ~ class)
+         )
+
+
+# test <- chem_index_c2 %>% 
+#   filter(chem_name_shiny == "Total/Sum Chemical Exposure" |
+#            chem_name_shiny == "Total/Sum POPs" |
+#            chem_name_shiny == "Total/Sum Hexabromocyclododecane")
+#  
+
+# unique source check
+chem_index_c2 %>% 
+  group_by(source) %>% 
+  count() 
+
+
+###############
+
+poly_index <- poly_index %>%
+  select("chem_name_shiny"       = polymer_name_or_class,
+         "cas"                   = cas_number,
+         "crow"                  = crow_link,
+         "source_1"              = source_1_wypych,
+         "source_2"              = source_2_kolzenburg,
+         "source_3"              = source_3_braun,
+         "source_4"              = source_4_salamone,
+         "source_5"              = source_5_ravve,
+         "source_6"              = source_6_lither
+         ) %>%
+  mutate(additive_identification  = NA,
+         class                    = "Polymers",
+         smiles                   = NA,
+         inchl                    = NA,
+         inchlkey                 = NA,
+         #class2                  = NA,
+         #class3                  = NA,
+         add_function             = NA,
+         gen_function             = NA,
+         sector                   = NA,
+         production_volume        = NA,
+         level_of_concern         = NA
+         )
+ 
+poly_index_c <- poly_index %>% 
+  mutate(crow = ifelse(!is.na(crow),
+                       "https://www.polymerdatabase.com/",
+                       crow),
+         source_1 = ifelse(!is.na(source_1),
+                       "Wypych (2016)",
+                       source_1),
+         source_2 = ifelse(!is.na(source_2),
+                       "Koltzenburg et al (2017)",
+                       source_2),
+         source_3 = ifelse(!is.na(source_3),
+                       "Braun et al (2012)",
+                       source_3),
+         source_4 = ifelse(!is.na(source_4),
+                       "Salamone (1996)",
+                       source_4),
+         source_5 = ifelse(!is.na(source_5),
+                       "Ravve et al (2012)",
+                       source_5),
+         source_6 = ifelse(!is.na(source_6),
+                       "Lithner et al (2011)",
+                       source_6)
+         ) %>% 
+  unite("source",
+        crow, source_1, source_2, source_3, source_4, source_5, source_6,
+        sep    = "; ",
+        remove = T,
+        na.rm  = T)
+
+# chem_supp <-   chem_supp %>% 
+#   mutate(class2 = "")
+
+
+chem_index_full <- rbind(chem_index_c2, poly_index_c)  
+#chem_index <- rbind(chem_index, chem_supp %>% mutate(class2 = "",
+#                                                     class3 = ""))  
+
+
+cleaned_full_data <- cleaned_full_data_base %>%
+          separate_rows(chem_name_shiny, 
+                        sep = "_") %>%
+          left_join(chem_index_full, 
+                    by = c("chem_name_shiny" = "chem_name_shiny")) %>%
+          separate_rows(health_outcomes_shiny, 
+                        sep = "_") %>%
+          left_join(hom_index, 
+                    by = c("health_outcomes_shiny" = "display"))
+
+
+found_chem <- cleaned_full_data %>% 
+  select(chem_name_shiny) %>%
+  unique()%>%
+  unlist
+
+
+chem_index2 <- chem_index_full %>%
+  mutate(presence = ifelse(chem_name_shiny %in% found_chem,
+                           "found",
+                           "not found")
+         )
+
+
+
+
+
+```
+## Quality control
+
+here we run some test to see if there are any issues with data merging.
+
+``` {r Quality control}
+
+######## Comparator group not selected #######
+cleaned_full_data %>%
+  select(
+    refid,
+    risk,
+    risk_compartor_group
+  ) %>%
+  unique() %>%
+  drop_na() %>%
+    filter(risk == "Yes" & risk_compartor_group == "") %>%
+  select(refid) %>%
+  paste()
+
+####### exposure and health outcome is prenatal individual ########
+cleaned_full_data %>%
+  select(refid,
+         age_exp,
+         age_health,
+         population) %>%
+  unique() %>%
+  filter(age_health == "Prenatal (&lt;0)" &
+         age_exp == "Prenatal (&lt;0)") %>%
+  select(refid) %>%
+  paste()
+
+########### multiple genders #######
+cleaned_full_data %>%
+  select(
+    refid,
+    gender,
+    population
+    ) %>%
+  filter(population == "Individual(s)") %>%
+  select(refid,
+         gender) %>%
+  unique() %>%
+  group_by(refid) %>% 
+  filter(n()>1)   %>%
+  select(refid)   %>%
+  unique() %>%
+  paste()
+
+
+###### multiple chem classes, not multiple_exp selected ####
+cleaned_full_data %>%
+  select(
+    refid,
+    class,
+    multiple_exposures,
+    study_design
+    ) %>%
+  filter(multiple_exposures != "'multiple exposures measured&rsquo; (tick if &gt;1 plastic type or chemical class, whether on the &lsquo;included&rsquo; list or not)" &
+           study_design != "Experimental study without a control/comparison group (patch testing)") %>%
+  select(refid,
+         class) %>%
+  unique() %>%
+  group_by(refid) %>% 
+  filter(n()>1) %>%
+   select(refid) %>%
+  unique() %>%
+  paste()
+
+# cleaned_full_data %>%
+#   select(refid,
+#          chem_name_shiny,
+#          class) %>% 
+#   filter(refid == "2016613876") %>%
+#   unique() %>%
+#   paste()
+
+
+#### HoM mismatch ####
+
+cleaned_full_data %>%
+  select(
+    refid,
+    level0,
+    health_outcomes_shiny
+    ) %>%
+  unique() %>%
+  filter(is.na(level0)) %>%
+  paste()
+
+ cleaned_full_data %>%
+  select(
+    level0,
+    health_outcomes_shiny
+    ) %>%
+  filter(is.na(level0)) %>%
+  select(health_outcomes_shiny) %>%
+  unique() %>% 
+   paste()
+
+ 
+ hom_index %>% filter(str_detect(display, "academic")) %>% paste()
+ 
+##### Chem mismatch ####
+cleaned_full_data %>%
+  select(
+    refid,
+    class,
+    chem_name_shiny
+    ) %>%
+  unique() %>%
+  filter(is.na(class)) %>%
+  select(refid) %>%
+  paste()
+
+
+cleaned_full_data %>%
+  select(
+    class,
+    chem_name_shiny
+    ) %>%
+  filter(is.na(class)) %>%
+  select(chem_name_shiny) %>%
+  unique() %>% 
+  paste()
+ 
+
+
+##### Years mismatch ####
+cleaned_full_data %>%
+  select(
+    refid,
+    year) %>%
+  unique() %>%
+  group_by(refid) %>%
+  filter(n()>1)   %>%
+  select(refid)   %>%
+  unique() %>%
+  paste()
+
+##### poplation mismatch ####
+cleaned_full_data %>%
+  select(
+    refid,
+    country_investigated) %>%
+  unique() %>%
+  group_by(refid) %>%
+  filter(n()>1)   %>%
+  select(refid)   %>%
+  unique() %>%
+  paste()
+
+cleaned_full_data %>%
+  select(
+    refid,
+    country_first_auth) %>%
+  unique() %>%
+  group_by(refid) %>%
+  filter(n()>1)   %>%
+  select(refid)   %>%
+  unique() %>%
+  paste()
+
+cleaned_full_data %>%
+  select(
+    refid,
+    country_last_author) %>%
+  unique() %>%
+  group_by(refid) %>%
+  filter(n()>1)   %>%
+  select(refid)   %>%
+  unique() %>%
+  paste()
+
+cleaned_full_data %>%
+  select(year,
+    refid,
+    chem_name_shiny
+    ) %>%
+  unique() %>%
+  filter(str_detect(chem_name_shiny, "(PFDoDS)")) %>%
+  group_by(year) %>%
+  count()
+
+```
+
+```{r writing full dataframe}
+#write_csv(cleaned_level_4, here("cleaned_data", str_glue("{Sys.Date()}_cleaned_level_4.csv"))
+#          )
+#write_rds(cleaned_level_4, here("cleaned_data", str_glue("{Sys.Date()}_cleaned_level_4.rds"))
+#          )
+
+
+#write.csv(cleaned_level_3, here("cleaned_data", str_glue("{Sys.Date()}_cleaned_level_3.csv"))
+#          )
+#write_rds(cleaned_level_3, here("cleaned_data", str_glue("{Sys.Date()}_cleaned_level_3.rds"))
+#          )
+
+
+write.csv(cleaned_full_data, here("cleaned_data", "archive", str_glue("{Sys.Date()}_cleaned_full_data.csv"))
+          )
+write_rds(cleaned_full_data, here("cleaned_data", "archive", str_glue("{Sys.Date()}_cleaned_full_data.rds"))
+          )
+write.csv(cleaned_full_data, here("cleaned_data", "latest_cleaned_full_data.csv")
+          )
+write_rds(cleaned_full_data, here("cleaned_data", "latest_cleaned_full_data.rds")
+          )
+openxlsx::write.xlsx(cleaned_full_data, 
+                     here("cleaned_data", "latest_cleaned_full_data.xlsx")
+                     )
+
+
+# write.csv(chem_index2, here("Output",'Chemical index.csv'), row.names = FALSE)
+openxlsx::write.xlsx(chem_index2, here("Output",'chem_index_supplementary.xlsx'))
+
+
+
+#write_rds(ref_index, here("cleaned_data", str_glue("ref_index.rds"))
+#          )
+
+
+```
+
+## Condensed dataframe for Shiny app
+
+this next chunk creates a dataframe that only contains the relevant info for the shiny, making it load quicker
+
+``` {r shiny database}
+
+cols <- c("refid",
+          "citation",
+          "year",
+          "population",                                                                           
+          "gender",                                                                               
+          "risk",                                                                                 
+          "risk_special",                                                                        
+          "risk_maternal",                                                                       
+          "risk_paternal",                                                                        
+          "risk_compartor_group",                                                                 
+          "age_exp" ,                                                                             
+          "age_exp_infant",                                                                       
+          "chem_name_shiny", 
+          "age_health"   ,                                                                        
+          "age_health_infant" ,                                                                 
+          "health_outcomes_shiny",
+          "study_design",
+          "country_last_author",
+          "country_investigated",  
+          "class",                                                                      
+          "level0",
+          "level1" ,         
+          "group"
+          )
+
+# gender_index <- data.frame(pop_gend = c("Prenatal",
+#                                         "Neonate",
+#                                         "Infant",
+#                                         'Child',
+#                                         'Adolescent',
+#                                         'Unsure/Not given',
+#                                         'Adult', 
+#                                         'Older adult/Elderly',
+#                                         'Unclear/Not given'
+#                                         ),
+#                            fig_gend = c("Prenatal (<0)",
+#                                         "Neonate (0-1 mnth)",
+#                                         "Infant (1-12 mnth)", 
+#                                         'Child (1-10 yrs)',
+#                                         'Adolescent (10-18 yrs)',
+#                                         'Unsure/Not given (<18 yrs)',
+#                                         'Adult', 
+#                                         'Older adult/Elderly',
+#                                         'Unclear/Not given'
+#                                         ),
+#                            gend_grp = c(rep('Pre- and perinatal', 2), 
+#                                         rep("Pre-adult (<18 yrs)", 4), 
+#                                         rep('Adult (>18yrs)', 3)
+#                                         )
+#                            )
+
+shiny_df <- cleaned_full_data %>% janitor::clean_names() %>% 
+  select(one_of(cols)) %>%
+  unique() %>% 
+  mutate(level0= case_when(
+    str_detect(level0, "08 Nervous system"                                              ) ~ "Nervous system",
+    str_detect(level0, "13 Disorders of the digestive system"                           ) ~ "Digestive system",
+    str_detect(level0, "Health-related measures not related to a specific system"       ) ~ "Non system specific",
+    str_detect(level0, "14 Disorders of the skin"                                       ) ~ "Skin",
+    str_detect(level0, "16 Disorders of the genitourinary system"                       ) ~ "Genitourinary system",
+    str_detect(level0, "02 Neoplasms"                                                   ) ~ "Neoplasms",
+    str_detect(level0, "11 Circulatory system"                                          ) ~ "Circulatory system",
+    str_detect(level0, "19 Certain conditions originating in the perinatal period"      ) ~ "Perinatal period",
+    str_detect(level0, "18 Pregnancy, childbirth or the puerperium"                     ) ~ "Pregnancy, childbirth, or puerperium",
+    str_detect(level0, "04 Immune system"                                               ) ~ "Immune system",
+    str_detect(level0, "06 Mental, behavioural or neurodevelopmental disorders"         ) ~ "Mental, behavioural, or neurodevelopmental",
+    str_detect(level0, "05 Endocrine, nutritional or metabolic disorders"               ) ~ "Endocrine, nutritional, or metabolic",
+    str_detect(level0, "03 Blood or blood-forming organs"                               ) ~ "Blood or blood-forming organs",
+    str_detect(level0, "12 Respiratory system"                                          ) ~ "Respiratory system",
+    str_detect(level0, "09 Visual system"                                               ) ~ "Visual system",
+    str_detect(level0, "10 Ear or mastoid process"                                      ) ~ "Ear or mastoid process",
+    str_detect(level0, "15 Disorders of the musculoskeletal system or connective tissue") ~ "Musculoskeletal or connective tissue",
+    str_detect(level0, "20 Developmental anomalies"                                     ) ~ "Developmental anomalies",
+    str_detect(level0, "17 Conditions related to sexual health"                         ) ~ "Sexual health",
+    str_detect(level0, "01 Certain infectious or parasitic diseases"                    ) ~ "Infectious or parasitic",
+    str_detect(level0, "07 Sleep-wake disorders"                                        ) ~ "Sleep-wake")
+  ) %>% 
+  mutate(risk_special  = replace(risk_special,  risk_special == "", NA),
+         risk_maternal = replace(risk_maternal, risk_maternal == "", NA),
+         risk_paternal = replace(risk_paternal, risk_paternal == "", NA)
+         ) %>%
+  unite("risk_spec", 
+        c(risk_special, risk_maternal,risk_paternal), 
+        remove = T, 
+        na.rm = T) %>%
+  separate_rows(risk_spec, 
+                sep = "_") %>%
+  mutate(risk_group = case_when(str_detect(risk_spec, "Paternal") ~ "Paternal",
+                                str_detect(risk_spec, "Maternal") ~ "Maternal",
+                                str_detect(risk_spec, "Special") ~ "Individual",
+                                str_detect(risk, "No") ~ "None"
+                                )
+         ) %>%
+  unique() %>%
+  mutate(risk_spec = case_when(str_detect(risk_spec, "ingestion") ~ "Ingestion",
+                               str_detect(risk_spec, "occupational") ~ "Occupational",
+                               str_detect(risk_spec, "other") ~ "Other (location)",
+                               TRUE ~ "No special risk")
+         ) %>%
+  mutate(age_exp           = trimws(str_replace_all(age_exp, " \\(.*?\\)", "")),
+         age_exp_infant    = trimws(str_replace_all(age_exp_infant, " \\(.*?\\)", "")),
+         age_health        = trimws(str_replace_all(age_health, " \\(.*?\\)", "")),
+         age_health_infant = trimws(str_replace_all(age_health_infant, " \\(.*?\\)", ""))) %>%
+  mutate(age_exp    = str_replace(age_exp, "Neonate/Infant/Child/Adolescent", "Underage"),
+         age_health = str_replace(age_health, "Neonate/Infant/Child/Adolescent", "Underage")) %>%
+  unite("age_exp_comb", 
+        c(age_exp, age_exp_infant), 
+        remove = T)%>%
+  unite("age_health_comb", 
+        c(age_health, age_health_infant), 
+        remove = T) %>% 
+  separate_rows(age_exp_comb, 
+                sep = "_"
+                ) %>%
+  separate_rows(age_health_comb, 
+                sep = "_"
+                ) %>%
+  filter(age_exp_comb    != "") %>%
+  filter(age_exp_comb    != "Underage")%>%
+  filter(age_health_comb != "") %>%
+  filter(age_health_comb != "Underage")%>%
+  # left_join(gender_index, by = c("age_exp_comb" = "pop_gend")) %>% 
+  unique() %>% 
+  separate_rows(country_investigated, sep = "_") %>%
+  mutate(ci_code = to_code(country_investigated))  
+
+
+
+df_shiny <- shiny_df %>% 
+  separate_rows(chem_name_shiny, sep = "_") %>%
+  left_join(chem_index2 %>% 
+              ungroup() %>% 
+              select(chem_name_shiny,
+                     cas),
+            by = c("chem_name_shiny" = "chem_name_shiny")) %>% 
+  mutate(age_exp_comb = case_when(age_exp_comb == "Prenatal"            ~   "Prenatal (<0)",
+                                 age_exp_comb == "Neonate"             ~   "Neonate (0-1 mnth)",
+                                 age_exp_comb == "Infant"              ~ "Infant (1-12 mnth)", 
+                                 age_exp_comb == 'Child'               ~'Child (1-10 yrs)',
+                                 age_exp_comb == 'Adolescent'          ~  'Adolescent (10-18 yrs)',
+                                 age_exp_comb == 'Unspecified pre-adult'   ~ 'Unspecified pre-adult (<18 yrs)',
+                                 TRUE ~ age_exp_comb),
+         age_health_comb = case_when(age_health_comb == "Prenatal"            ~   "Prenatal (<0)",
+                                    age_health_comb == "Neonate"             ~   "Neonate (0-1 mnth)",
+                                    age_health_comb == "Infant"              ~ "Infant (1-12 mnth)", 
+                                    age_health_comb == 'Child'               ~'Child (1-10 yrs)',
+                                    age_health_comb == 'Adolescent'          ~  'Adolescent (10-18 yrs)',
+                                    age_health_comb == 'Unspecified pre-adult'   ~ 'Unspecified pre-adult (<18 yrs)',
+                                    TRUE ~ age_health_comb)
+         )
+
+
+# df_shiny %>% select(refid,
+#                     ci_code,
+#                     country_investigated) %>% 
+#   filter(is.na(ci_code)) %>% 
+#   unique()
+
+  
+write.csv(df_shiny, here("Output",'shiny_df_condensed_cas.csv'))
+write_rds(df_shiny, here("Output",'shiny_df_condensed_cas.rds'))
+openxlsx::write.xlsx(df_shiny, here("Output",'shiny_df_condensed_cas.xlsx'))
+```
+
+## Supplementary table
+
+here we create the dataframe that is used as supplementary to the paper
+
+``` {r supplementary database}
+
+
+names(cleaned_full_data)
+
+cols <- c("refid",
+          "citation",
+          "year",
+          "country_first_auth",
+          "country_last_author",
+          "country_investigated",
+          "population",                                                                           
+          "gender",                                                                                  
+          "risk_special",                                                                        
+          "risk_maternal",                                                                       
+          "risk_paternal",                                                                        
+          "risk_compartor_group",                                                                 
+          "age_exp" ,                                                                             
+          "age_exp_infant", 
+          "chem_name_shiny",                                                                     
+          "class",  
+          "multiple_exposures",                                                             
+          "age_health",                                                                        
+          "age_health_infant" ,                                                                 
+          "health_outcomes_shiny",
+          "level0",                                                                     
+          "level1",                                                                    
+          "group",
+          "study_design")
+
+          
+supp_df <- cleaned_full_data %>%
+  select(one_of(cols)) %>%
+  group_by(refid, 
+           population, 
+           gender, 
+           age_exp) %>%
+  mutate(group                 = replace_na(group, "Other"),
+         health_outcomes_shiny = paste(unique(health_outcomes_shiny), collapse = '; '),
+         chem_name_shiny       = paste(unique(chem_name_shiny), collapse = '; '),
+         level0                = paste(unique(level0), collapse = '; '),
+         class                 = paste(unique(class), collapse = '; '),
+         level1                = paste(unique(level1), collapse = '; '),
+         group                 = paste(unique(group), collapse = '; '),
+         multiple_exposures    = str_replace(multiple_exposures, 
+                                             "'multiple exposures measu.+", 
+                                             "Yes"),
+         country_investigated  = str_replace_all(country_investigated, 
+                                                "_", 
+                                                "; "),
+         risk_special          = replace(risk_special, risk_special == "", NA),
+         risk_maternal         = replace(risk_maternal, risk_maternal == "", NA),
+         risk_paternal         = replace(risk_paternal, risk_paternal == "", NA),
+         age_exp_infant        = replace(age_exp_infant, age_exp_infant == "", NA),
+         age_health_infant     = replace(age_health_infant, age_health_infant == "", NA),
+         age_exp               = replace(age_exp, age_exp == "", NA),
+         age_health            = replace(age_health, age_health == "", NA)
+         ) %>%
+  rename(comparator_group = risk_compartor_group
+         ) %>%
+  unite(
+    "special_risk",
+    contains("risk_"), 
+    sep = "; ",
+    na.rm = TRUE
+    ) %>%
+  unite(
+    "age_exp",
+    contains("age_exp"), 
+    sep = "_",
+    na.rm = TRUE
+    ) %>%
+  unite(
+    "age_health",
+    contains("age_health"), 
+    sep = "_",
+    na.rm = TRUE)
+  
+    
+supp_df1 <- supp_df %>%
+  group_by(refid,
+           population,
+           gender,
+           age_exp
+           ) %>%
+  separate_rows(age_exp, 
+                sep = "_"
+                ) %>%
+  mutate(age_exp = replace(age_exp, 
+                           age_exp == "Neonate/Infant/Child/Adolescent (&lt;18)", 
+                           NA)
+         ) %>%
+  filter(!is.na(age_exp)
+         ) %>%
+  mutate(age_exp = paste(unique(age_exp), 
+                         collapse = '; ')
+         ) %>%
+  separate_rows(age_health, 
+                sep = "_"
+                ) %>%
+  mutate(age_health = replace(age_health, 
+                              age_health == "Neonate/Infant/Child/Adolescent (&lt;18)",
+                              NA)
+         ) %>%
+  filter(!is.na(age_health)
+         ) %>%
+  mutate(age_health = paste(unique(age_health), 
+                            collapse = '; ')
+         ) %>%
+  unique()%>%
+  mutate(special_risk       = replace(special_risk, special_risk == "", "No"),
+         multiple_exposures = replace(multiple_exposures, multiple_exposures == "", "No"),
+         comparator_group   = replace(comparator_group, comparator_group == "", "NA"),
+         special_risk       = str_replace_all(special_risk, 
+                                              "&ndash;", 
+                                              "-"),
+         special_risk       = str_replace_all(special_risk, 
+                                              "_", 
+                                              "; "),
+         age_exp            = str_replace_all(age_exp, 
+                                              "&lt;", 
+                                              "<"),
+         age_health         = str_replace_all(age_health, 
+                                              "&lt;", 
+                                              "<"),
+         age_exp            = str_replace_all(age_exp, "Unclear/Not given", "Neonate/Infant/Child/Adolescent (<18)"),
+         age_health         = str_replace_all(age_health, "Unclear/Not given", "Neonate/Infant/Child/Adolescent (<18)") 
+         ) %>%
+  rename(
+    "Reference ID"                       = refid, 
+    "Reference citation"                 = citation, 
+    "Year"                               = year,
+    "Country of first author"            = country_first_auth,
+    "Country of last author"             = country_last_author,
+    "Country of investigated population" = country_investigated,
+    "Population type"                    = population,
+    "Sex"                                = gender,
+    "Special risk of exposure"           = special_risk,
+    "Comparator group"                   = comparator_group,
+    "Age at exposure"                    = age_exp,
+    "Plastic chemicals"                  = chem_name_shiny,                                                                     
+    "Chemical class"                     = class,   
+    "Multiple exposures"                 = multiple_exposures,                                                             
+    "Age at health outcome measure"      = age_health,   
+    "Health outcome measures"            = health_outcomes_shiny,
+    "ICD level 0"                        = level0,                                                                     
+    "ICD level 1"                        = level1,                                                                    
+    "Health outcome measure sub-groups"  = group,
+    "Study design"                       = study_design
+    )
+
+
+
+write.csv(supp_df1, 
+          here("Output",'supplementary_data_format.csv'), 
+          row.names = FALSE,
+          na = "")
+
+```
+

@@ -21,6 +21,10 @@ library(here)
 library(janitor)
 library(patchwork)
 
+# need to update R first...
+# Sys.unsetenv("GITHUB_PAT")
+# remotes::install_github("mattcowgill/ggannotate", auth_token = NULL)
+
 theme_set(theme_classic())
 
 theme_sr<- theme(legend.background     = element_blank(),
@@ -35,8 +39,8 @@ theme_sr<- theme(legend.background     = element_blank(),
 geom.text.size = 10
 theme.size     = 0.36 * geom.text.size
 
-title_theme <- theme(plot.title = element_text(hjust = 0, size = 10), 
-                    plot.title.position = "plot")
+title_theme <- theme(plot.title = element_text(size = 10, hjust = 0),
+                      plot.title.position = "plot")
 
 
 min.col.test  <- colorRampPalette(c("#FFCD00","#FF4F00"))
@@ -84,6 +88,7 @@ min_pal_qual2 <- rev(c(
                   "#FF4F00",
                   "#FFCD00",
                   # "#B8DB4D",
+                  "#ad985f",
                   "#93af3e",
                   "#4d9d9d",
                   "#21453E",
@@ -93,7 +98,10 @@ min_pal_qual2 <- rev(c(
                   "#000000"
                   ))
 
+scales::show_col(min_pal_qual)
 
+scales::show_col(min_pal_qual2)
+scales::show_col(min_pal_9 )
 
 
 ```
@@ -148,8 +156,8 @@ df %>%
                     paste(gsub("([()])","\\\\\\1", alt_pht), 
                           collapse="|"))
          ) %>%
-  unique() %>% 
-  print(n = 25)
+  distinct(refid) %>% 
+  print(n = 47)
 
 
 df %>%
@@ -182,10 +190,12 @@ df %>%
   unique()
 
 chem_order1 <- c("Bisphenols",
-                "PFAS",
-                "Phthalates",
+                 "PFAS",
                 "PBBs", 
-                "Other",
+                "Phthalates",
+                "Other mixed use",
+                "Other flame retardants",
+                "Other plasticizers",
                 "OPEs",
                 "PBDEs",
                 "PCBs",
@@ -218,9 +228,9 @@ chem_year <- df %>%
          ) %>%
   drop_na(class) %>%
   unique() %>%
-  filter(year != "2021") %>%
+  filter(year != "2022") %>%
   complete(class, 
-           year = 1960:2020, 
+           year = 1960:2021, 
            fill = list(`n()` = 0)
            ) %>%
   group_by(year, 
@@ -257,8 +267,10 @@ chem_year <- df %>%
            colour = "black",
            angle  = 90,
            size   = theme.size)+
-    scale_fill_manual(values = min_pal_qual2[c(3:10,2, 1)],
+  scale_fill_manual(values = min_pal_qual2[c(2:11,1)],
                       labels = label_order)+
+  scale_x_continuous(limits = c(1960,2021),
+                     breaks = c(1960,1980,2000,2020))+
   theme_classic()+
   labs(x    = "Year", 
        y    = "Published articles per year", 
@@ -282,7 +294,7 @@ bis.label <- df %>%
                      class,
                      year) %>%  
               filter(class == "Bisphenols") %>% 
-              filter(year  != "2021" &
+              filter(year  != "2022" &
                      year  > "1989") %>%
               mutate(subclass = ifelse(str_detect(chem_name_shiny, "(Bisphenol A)"),
                                        "Bisphenol A",
@@ -300,14 +312,14 @@ bis_ana <- df %>%
          class,
          year) %>%  
   filter(class == "Bisphenols") %>% 
-  filter(year != "2021" &
+  filter(year != "2022" &
          year > "1989") %>%
   mutate(subclass = ifelse(str_detect(chem_name_shiny, "(Bisphenol A)"),
                            "Bisphenol A",
                            "Bisphenol analogues")) %>% 
   select(!chem_name_shiny) %>% 
   unique() %>%
-  complete(subclass, year = 1990:2020, fill = list(`n()` = 0)) %>%
+  complete(subclass, year = 1990:2021, fill = list(`n()` = 0)) %>%
   group_by(year, subclass) %>%
   summarise(n = sum(!is.na(refid))) %>% 
   ggplot(aes(x    = year,
@@ -325,11 +337,11 @@ bis_ana <- df %>%
   labs(x = "Year", 
        y = NULL, 
        fill = "")+
-   scale_fill_manual(values = c(min_pal_qual2[3], "#203448"),
+   scale_fill_manual(values = c(min_pal_qual2[2], "#E41666"),
                      labels = bis.label)+
-  scale_y_continuous(limits = c(0,125))+
-  scale_x_continuous(limits = c(1990,2020),
-                     breaks = c(2000, 2010, 2020))+
+  scale_y_continuous(limits = c(0,150))+
+  scale_x_continuous(limits = c(1990,2021),
+                     breaks = c(1990, 2000, 2010, 2020))+
   theme_sr +
   theme(legend.background     = element_blank(),
         legend.box.background = element_blank(),
@@ -349,7 +361,7 @@ ope.label <- df %>%
                      year) %>%  
               filter(class == "PBDEs" |
                      class == "OPEs") %>% 
-              filter(year  != "2021" &
+              filter(year  != "2022" &
                      year  > "1989") %>%
               unique() %>%
               group_by(class) %>% 
@@ -363,11 +375,11 @@ pbde_ope <- df %>%
          year) %>%  
   filter(class == "PBDEs" |
          class == "OPEs") %>% 
-  filter(year  != "2021" &
+  filter(year  != "2022" &
          year  > "1989") %>%
   unique() %>%
   complete(class, 
-           year = 1990:2020, 
+           year = 1990:2021, 
            fill = list(`n()` = 0)
            ) %>%
   group_by(class, year) %>%
@@ -388,11 +400,11 @@ pbde_ope <- df %>%
   labs(x = "Year", 
        y = "Published articles per year", 
        fill = "Chemical group (total articles)")+
-  scale_fill_manual(values = min_pal_qual2[c(9,8)],
+  scale_fill_manual(values = min_pal_qual2[c(10,9)],
                     labels = ope.label)+
-  scale_y_continuous(limits = c(0,125))+
-  scale_x_continuous(limits = c(1990,2020),
-                     breaks = c(2000, 2010, 2020))+
+  scale_y_continuous(limits = c(0,150))+
+  scale_x_continuous(limits = c(1990,2021),
+                     breaks = c(1990, 2000, 2010, 2020))+
   theme_sr +
     theme(legend.background     = element_blank(),
           legend.box.background = element_blank(),
@@ -417,7 +429,7 @@ pht.label <- df %>%
               filter(subclass == "Phthalate substitutes" |
                      class == "Phthalates"
                      ) %>% 
-              filter(year != "2021" &
+              filter(year != "2022" &
                      year > "1989") %>%
               unique() %>%
               group_by(subclass) %>% 
@@ -437,11 +449,11 @@ pht_ana <- df %>%
   filter(subclass == "Phthalate substitutes" |
          class == "Phthalates"
          ) %>% 
-  filter(year != "2021" &
+  filter(year != "2022" &
          year > "1989") %>%
   unique() %>%
   complete(subclass, 
-           year = 1990:2020, 
+           year = 1990:2021, 
            fill = list(`n()` = 0)
            ) %>%
   group_by(year, subclass) %>%
@@ -463,9 +475,9 @@ pht_ana <- df %>%
        fill = "")+
   scale_fill_manual(values = c(min_pal_qual2[5], "#647d78"),
                     labels = pht.label)+
-  scale_y_continuous(limits = c(0,125))+
-  scale_x_continuous(limits = c(1990,2020),
-                     breaks = c(2000, 2010, 2020))+
+  scale_y_continuous(limits = c(0,150))+
+  scale_x_continuous(limits = c(1990,2021),
+                     breaks = c(1990, 2000, 2010, 2020))+
   theme_sr +
    theme(legend.background     = element_blank(),
          legend.box.background = element_blank(),
@@ -485,14 +497,26 @@ BCD
 "
 
 
-chem_time2 <- wrap_plots(A = (chem_year + ggtitle("A. Published articles per chemical class over time") + title_theme), 
-                         B = (pbde_ope  + ggtitle("B. PBDEs and OPEs") + title_theme),
-                         C = (pht_ana   + ggtitle("C. Phthalates and substitutes") + title_theme ),
-                         D = (bis_ana   + ggtitle("D. BPA and analogues") + title_theme), 
+chem_time2 <- wrap_plots(A = (chem_year + ggtitle("A. Published articles per chemical class over time") + title_theme + theme(plot.title = element_text(hjust = 0.045))), 
+                         B = (pbde_ope  + ggtitle("B. PBDEs and OPEs")                                  + title_theme + theme(plot.title = element_text(hjust = 0.175))),
+                         C = (pht_ana   + ggtitle("C. Phthalates and substitutes")                      + title_theme),
+                         D = (bis_ana   + ggtitle("D. BPA and analogues")                               + title_theme), 
                          design = wrp2) 
 
 print(chem_time2)
 
+nflplotR::ggpreview(
+  plot = ggplot2::last_plot(),
+  width = 190,
+  height = 200,
+  asp = NULL,
+  dpi = 600,
+  device = "png",
+  units = c("mm"),
+  scale = 1,
+  limitsize = TRUE,
+  bg = NULL
+)
 
 
 ```
@@ -540,8 +564,8 @@ quick_pop <- function(dat, col) {
               hjust    = -0.25,
               size     = theme.size8
               )+
-    scale_x_continuous(breaks = c(0, 500,1000,1500,2000, 2500), 
-                       limits = c(0, 2750))+
+    scale_x_continuous(breaks = c(0, 1000,2000, 3000), 
+                       limits = c(0, 3250))+
     labs(x = "Number of articles", 
          y = "")+
     theme_sr8
@@ -613,9 +637,9 @@ pop_order <- rev(c("Prenatal (<0)",
 
 # define the color of the bars
 #pop_color <- min_pal_qual2[c(6,8,7)]
- pop_color <- c('Pre- and perinatal'  = min_pal_qual2[8],
-                "Pre-adult (<18 yrs)" = min_pal_qual2[9],
-                'Adult (>18yrs)'      = min_pal_qual2[10]
+ pop_color <- c('Pre- and perinatal'  = min_pal_qual2[9],
+                "Pre-adult (<18 yrs)" = min_pal_qual2[10],
+                'Adult (>18yrs)'      = min_pal_qual2[11]
                     )
                 
 # for exposure
@@ -662,7 +686,7 @@ pop_exp <- df_pop %>%
                                  "Pre-adult\n  (<18 yrs)", 
                                  "Adult\n  (>18 yrs)")
                       )+
-    scale_x_continuous(breaks=c(0, 500,1000,1500,2000, 2500), limits=c(0, 2750)
+    scale_x_continuous(breaks=c(0, 1000, 2000, 3000), limits=c(0, 3250)
                        )+
     labs(x    = "Number of articles", 
          y    = "",
@@ -715,14 +739,14 @@ pop_health <- df_pop %>%
                                  "Pre-adult\n  (<18 yrs)", 
                                  "Adult\n  (>18 yrs)")
                       )+
-    scale_x_continuous(breaks = c(0, 500,1000,1500,2000, 2500), 
-                       limits = c(0, 2750)
+    scale_x_continuous(breaks = c(0, 1000, 2000, 3000), 
+                       limits = c(0, 3250)
                        )+
     labs(x    = "Number of articles", 
          y    = "",
          fill = "") +
     theme_sr8 +
-    theme(legend.position       = c(.70,.75),
+    theme(legend.position       = c(.75,.70),
           legend.background     = element_blank(),
           legend.title          = element_blank(),
           legend.box.background = element_rect(colour = "black")
@@ -750,7 +774,7 @@ study_design_plot <- df %>%
               hjust = -0.25,
               size = theme.size8
               )+
-  scale_x_continuous(breaks=c(0, 500, 1000, 1500, 2000, 2500), limits=c(0, 2750))+
+  scale_x_continuous(breaks=c(0, 1000, 2000 ,3000), limits=c(0, 3250))+
     labs(x = "Number of articles", 
        y = " ") +
   theme_sr8
@@ -798,13 +822,13 @@ risk_plot <- df %>%
               )+
   scale_fill_manual(values = min_pal_qual2[c(5,4,2,7 )], 
                     breaks = c("None", "Individual","Maternal","Paternal"))+
-  scale_x_continuous(breaks=c(0, 500, 1000, 1500, 2000, 2500), 
-                     limits=c(0, 2750))+
+  scale_x_continuous(breaks=c(0, 1000, 2000, 3000), 
+                     limits=c(0, 3250))+
     labs(x    = "Number of articles", 
          y    = "",
          fill = "Exposure type")+
   theme_sr8 +
-  theme(legend.position       = c(.70,.40),
+  theme(legend.position       = c(.75,.40),
         legend.background     = element_blank(),
         legend.title          = element_blank(),
         legend.box.background = element_rect(colour = "black")
@@ -812,16 +836,30 @@ risk_plot <- df %>%
 
 
 
-study_risk_plot <- (pop_gene          + ggtitle("A. Population type") + title_theme) +
-                   (pop_gend          + ggtitle("B. Biological sex") + title_theme) + 
-                   (pop_exp           + ggtitle("C. Age at exposure assessment") + title_theme) +
-                   (pop_health        + ggtitle("D. Age at health outcome assessment") + title_theme) +
-                   (risk_plot         + ggtitle("E. Special risk of exposure") + title_theme) + 
-                   (study_design_plot + ggtitle("F. Study designs") + title_theme) +  
+study_risk_plot <- (pop_gene          + ggtitle("A. Population type")                  + title_theme +theme(axis.title.x = element_blank()))+
+                   (pop_gend          + ggtitle("B. Biological sex")                   + title_theme +theme(axis.title.x = element_blank()))+
+                   (pop_exp           + ggtitle("C. Age at exposure assessment")       + title_theme +theme(axis.title.x = element_blank()))+
+                   (pop_health        + ggtitle("D. Age at health outcome assessment") + title_theme +theme(axis.title.x = element_blank()))+
+                   (risk_plot         + ggtitle("E. Special risk of exposure")         + title_theme )+
+                   (study_design_plot + ggtitle("F. Study designs")                    + title_theme )+
               plot_layout(ncol = 2, 
               nrow = 3)
   
 print(study_risk_plot)
+
+nflplotR::ggpreview(
+  plot = ggplot2::last_plot(),
+  width = 190,
+  height = 200,
+  asp = NULL,
+  dpi = 600,
+  device = "png",
+  units = c("mm"),
+  scale = 1,
+  limitsize = TRUE,
+  bg = NULL
+)
+
 
 
 ``` 
@@ -831,10 +869,10 @@ print(study_risk_plot)
 
 ``` {r}
 
-chem_index <- readxl::read_excel(here("Data", "final_chem_shiny.xlsx"), 
+chem_index <- readxl::read_excel(here("Data", "final_chem_list.xlsx"), 
                                  sheet = "Additives"
                                  ) %>% janitor::clean_names()
-poly_index <- readxl::read_excel(here("Data", "final_chem_shiny.xlsx"), 
+poly_index <- readxl::read_excel(here("Data", "final_chem_list.xlsx"), 
                                  sheet = "Polymers"
                                  ) %>% janitor::clean_names()
 
@@ -1046,11 +1084,13 @@ cnt.unk <- df %>%
   count()
 
 # restructure the database 
+ mutate(country = iconv(country, "latin1", "UTF-8",sub=''))
+
 dfa <- df %>%
       separate_rows(country_investigated, sep = "_") %>%
-      mutate(ci_code = to_code(country_investigated),
-             c2_code = to_code(country_first_auth),
-             c3_code = to_code(country_last_author)
+      mutate(ci_code = to_code(iconv(country_investigated,"latin1", "UTF-8",sub='')) ,
+             c2_code = to_code(iconv(country_first_auth  ,"latin1", "UTF-8",sub='')) ,
+             c3_code = to_code(iconv(country_last_author ,"latin1", "UTF-8",sub='')) 
              ) %>%
       distinct(refid, 
                ci_code, 
@@ -1148,7 +1188,7 @@ quick_barplot <- function(.data, group, n = 15) {
     geom_col(fill = "#000000",
              alpha = 0.5) +
     geom_text(aes(label =  n),
-              hjust = -0.25,
+              hjust = -0.15,
               size  = theme.size8
               )+
     guides(fill = "none", alpha = "none") +
@@ -1166,7 +1206,8 @@ quick_barplot <- function(.data, group, n = 15) {
 bar_pop <- quick_barplot(dfa, ci_code)
 
 df_gni2 <- read.csv(here("Data", "country_gni.csv")) %>% 
-  janitor::clean_names() %>%  
+  janitor::clean_names() %>%
+  mutate(country = iconv(country, "latin1", "UTF-8",sub='')) %>% 
   mutate(code = to_code(country)) %>% 
   drop_na(code) %>% 
   mutate(economic_status = factor(economic_status, levels = c("Low income",
@@ -1181,6 +1222,7 @@ gni_dat <- df_gni2 %>%
                       country_investigated) %>%
                separate_rows(country_investigated, 
                              sep = "_") %>%
+               # mutate(country_investigated = iconv(country_investigated, "latin1", "UTF-8",sub='')) %>% 
                mutate(code = to_code(country_investigated)) %>%
                unique() %>%
                group_by(country_investigated,
@@ -1192,17 +1234,17 @@ gni_dat <- df_gni2 %>%
   mutate(n = replace_na(n, 0)) 
  
 
-check <- df %>% 
-  select(refid,
-         country_investigated) %>%
-  separate_rows(country_investigated, 
-                sep = "_") %>%
-  mutate(code = to_code(country_investigated)) %>%
-  unique() %>%
-  group_by(country_investigated,
-           code) %>%
-  count() %>% 
-  left_join(country_meta2, by = c("code" = "code"))
+# check <- df %>%
+#   select(refid,
+#          country_investigated) %>%
+#   separate_rows(country_investigated,
+#                 sep = "_") %>%
+#   mutate(code = to_code(country_investigated)) %>%
+#   unique() %>%
+#   group_by(country_investigated,
+#            code) %>%
+#   count() %>%
+#   left_join(gni_dat %>% select(code,economic_status), by = c("code" = "code"))
 
 
 bar_gni <- gni_dat %>% 
@@ -1215,7 +1257,7 @@ bar_gni <- gni_dat %>%
     geom_col(fill = "#000000",
              alpha = 0.5) +
     geom_text(aes(label =  `sum(n)`),
-              hjust = -0.25,
+              hjust = -0.15,
               size = theme.size8
               )+
     guides(fill = "none", 
@@ -1223,7 +1265,7 @@ bar_gni <- gni_dat %>%
     labs(y = "Number of articles",
          x = NULL) +
     scale_y_continuous(breaks = c(0, 1000, 2000, 3000),
-                       limits = c(0, 3800)) +
+                       limits = c(0, 4100)) +
     theme_sr +
     theme(axis.text.x = element_text(hjust = 1,
                                      angle = 45) 
@@ -1257,6 +1299,15 @@ world_maps2 <-
              
 print(world_maps2)
 
+nflplotR::ggpreview(
+  plot = ggplot2::last_plot(),
+  width = 190,
+  height = 140,
+  asp = NULL,
+  dpi = 600,
+  device = "png",
+  units = c("mm"),
+  scale = 1)
 
 
 bar_la     <- quick_barplot(dfa, c3_code)
@@ -1338,7 +1389,9 @@ chem_order <- c("PCBs",
                 "PBBs", 
                 "OPEs",
                 "Polymers",
-                "Other"
+                "Other flame retardants",
+                "Other plasticizers",
+                "Other mixed use"
                 )
 
 wdf2 <- wdf %>% 
@@ -1416,7 +1469,7 @@ heatmap_level0 <- wdf2 %>%
         panel.background = element_rect(fill   = NA, 
                                         colour = "black", 
                                         size   = 1),
-        axis.text.x      = element_text(hjust = 1,vjust = 1, angle = 75)
+        axis.text.x      = element_text(hjust = 1,vjust = .5, angle = 90)
         )
 
 
@@ -1462,11 +1515,11 @@ bar_exp <- wdf2 %>%
      geom_col(fill  = "#000000",
               alpha = 0.5) +
     geom_text(aes(label =  n),
-              hjust = -0.25,
+              hjust = -0.15,
               size  = theme.size
               )+
-  scale_x_continuous(breaks   = c(0, 250, 500, 750, 1000), 
-                     limits   = c(0,1250),
+  scale_x_continuous(breaks   = c(0, 250, 500, 750, 1000,1250), 
+                     limits   = c(0,1400),
                      position = "bottom") + 
   guides( alpha = "none", 
           fill  = "none") +
@@ -1474,15 +1527,15 @@ bar_exp <- wdf2 %>%
        y = "")+
   theme_sr +
   theme(axis.text.y = element_blank(),
-        axis.text.x = element_text(hjust = 1,vjust = 1, angle = 75))
+        axis.text.x = element_text(hjust = 1,vjust = .5, angle = 90))
 
 
   Hom_exp_map <- (heatmap_level0 +  ggtitle("A. Articles combining chemical class exposures\nand health outcomes*") + title_theme) +
                  (bar_hom +  ggtitle("B. Articles including listed\n health outcomes*") + title_theme  + 
-                  theme(axis.title.x = element_text(margin = margin(t = -30, unit = "pt"))))+
+                  theme(axis.title.x = element_text(margin = margin(t = -125, unit = "pt"))))+
                   plot_spacer() + plot_spacer() +
                  (bar_exp + ggtitle("C. Articles including listed \nchemical class exposure*") + title_theme +
-                    theme(axis.title.y = element_text(margin = margin(r = -150, unit = "pt")),
+                    theme(axis.title.y = element_text(margin = margin(r = -175, unit = "pt")),
                           plot.title  = element_text(vjust = -15))) + 
                   guide_area()+
              plot_layout(ncol    = 2, 
@@ -1517,26 +1570,33 @@ ggsave(here("figures", "world_map_populations_supp.png"),world_map_supp,  dpi = 
 
 ggsave(here("figures", "heatmap_HOM_EXP3.png"), Hom_exp_map,  dpi = 600, height = 250, width = 190, units="mm")
 
-ggsave(here("figures", "iceberg.png"), iceberg_plot,  dpi = 600, height = 95, width = 95, units="mm")
+#ggsave(here("figures", "iceberg.png"), iceberg_plot,  dpi = 600, height = 95, width = 95, units="mm")
 
  
 
+require(svglite)
+ggsave(here("Figures/svg", "Chemicals over time_full.svg"),chem_time2, dpi = 600, height = 200, width = 190, units="mm")
+ggsave(here("Figures/svg", "Chemicals over time_full_sub_a.svg"),chem_year, dpi = 600, height = 100, width = 190, units="mm")
+ggsave(here("Figures/svg", "Chemicals over time_full_sub_b.svg"),pbde_ope, dpi = 600, height = 100, width = 100, units="mm")
+ggsave(here("Figures/svg", "Chemicals over time_full_sub_c.svg"),pht_ana, dpi = 600, height = 100, width = 100, units="mm")
+ggsave(here("Figures/svg", "Chemicals over time_full_sub_d.svg"),bis_ana, dpi = 600, height = 100, width = 100, units="mm")
 
-# require(svglite)
-# ggsave(here("Figures", "Chemicals over time.svg"),chem_year, dpi = 600, height = 100, width = 188, units="mm")
-# # population plot
-# #ggsave(here("figures", "population_plot.png"),population_plot,  dpi = 600, height = 200, width = 250, units="mm")
-# #study design plot
-# ggsave(here("figures", "study_risk_plot.svg"),study_risk_plot,  dpi = 600, height = 200, width = 188, units="mm")
-# #world map
-# ggsave(here("figures", "world_map_populations2.svg"),world_maps2,  dpi = 600, height = 200, width = 188, units="mm")
-# #heatmap ages
-# #ggsave(here("figures", "Heatmap_ages.png"),heatmap_age_assess,  dpi = 600, height = 200, width = 200, units="mm")
-# #heatmap 
-# ggsave(here("figures", "heatmap_HOM_EXP2.svg"), Hom_exp_map,  dpi = 600, height = 250, width = 188, units="mm")
-# #iceberg
+
+
+
+# population plot
+#ggsave(here("figures", "population_plot.png"),population_plot,  dpi = 600, height = 200, width = 250, units="mm")
+#study design plot
+ggsave(here("figures/svg", "study_risk_plot.svg"),study_risk_plot,  dpi = 600, height = 200, width = 190, units="mm")
+#world map
+ggsave(here("figures/svg", "world_map_populations_gni.svg"),world_maps2,  dpi = 600, height = 140, width = 190, units="mm")
+#heatmap ages
+#ggsave(here("figures", "Heatmap_ages.png"),heatmap_age_assess,  dpi = 600, height = 200, width = 200, units="mm")
+#heatmap
+ggsave(here("figures/svg", "heatmap_HOM_EXP3.svg"), Hom_exp_map,  dpi = 600, height = 250, width = 190, units="mm")
+#iceberg
 # ggsave(here("figures", "iceberg.svg"), iceberg_plot,  dpi = 600, height = 100, width = 100, units="mm")
-
+#
 ### tables ###
 # country lists
  openxlsx::write.xlsx(gni_dat, here("Output",'countries_gni_count.xlsx'))
